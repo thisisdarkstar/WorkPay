@@ -2,15 +2,12 @@ import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import axios from "axios";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { url } from "../../../constants/EnvValue";
 import { useContextData } from "../../../context/EmployeeContext";
-import { getToken } from "../../../services/ApiService";
-
-// Dummy employee data
-
+import { getApiErrorMessage, getToken } from "../../../services/ApiService";
 
 function Profile() {
   const router = useRouter();
@@ -21,74 +18,85 @@ function Profile() {
   const [showOldPassword, setShowOldPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const {employeeData,showToast,setEmployeeData} = useContextData();
+  const {employeeData, showToast, setEmployeeData} = useContextData();
 
   // Bank details state
   const [showBankEditSection, setShowBankEditSection] = useState(false);
-  const [accountNumber, setAccountNumber] = useState(employeeData?.accountNumber); // Dummy data
-  const [ifscCode, setIfscCode] = useState(employeeData.ifscCode); // Dummy data
+  const [accountNumber, setAccountNumber] = useState(employeeData?.accountNumber || "");
+  const [ifscCode, setIfscCode] = useState(employeeData?.ifscCode || "");
+
+  useEffect(() => {
+    if (employeeData) {
+      if (employeeData.accountNumber) setAccountNumber(employeeData.accountNumber);
+      if (employeeData.ifscCode) setIfscCode(employeeData.ifscCode);
+    }
+  }, [employeeData]);
 
   const fetchDashboardDetails = async () => {
     try {
+      const token = await getToken();
+      if (!token) return;
       const response = await axios.get(`${url}/api/employees/dashboard`, {
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
       const data = response.data;
-      setEmployeeData(data.employeeDetails);
+      if (data?.employeeDetails) {
+        setEmployeeData(data.employeeDetails);
+      }
     } catch (error) {
-      showToast(error.response.data.error,'Error');
+      showToast(getApiErrorMessage(error, 'Error fetching profile details'), 'Error');
       console.error('Error fetching dashboard details:', error);
     }
   }
 
   const handlePasswordUpdate = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
-       showToast("Please fill in all password fields","Warning")
+      showToast("Please fill in all password fields", "Warning");
       return;
     }
     
     if (newPassword !== confirmPassword) {
-       showToast("New passwords do not match","Warning")
+      showToast("New passwords do not match", "Warning");
       return;
     }
     
     if (newPassword.length < 6) {
-        showToast("New password must be at least 6 characters long","Warning")
+      showToast("New password must be at least 6 characters long", "Warning");
       return;
     }
 
-    if(newPassword === oldPassword){
-      showToast("New Password cannot be same as Old Password","Error")
-      return
+    if (newPassword === oldPassword) {
+      showToast("New Password cannot be same as Old Password", "Error");
+      return;
     }
 
-    try{
-        const response = await axios.post(`${url}/api/employees/update-password`,{
-          currentPassword:oldPassword,
-          newPassword:newPassword
-        },
-       {
-               headers: {
-                 authorization: `Bearer ${await getToken()}`
-               }
-             }
-      )
-      if(response.data.message){
-        showToast(response.data.message,"Success")
-       setShowPasswordSection(false);
-          setOldPassword("");
-          setNewPassword("");
-          setConfirmPassword("");
-  }
-    }catch(error){
-      showToast(error.response.data.error,"Error")
-       console.error('Error Updating Password:', error);
+    try {
+      const token = await getToken();
+      if (!token) {
+        showToast("Session expired. Please login again.", "Error");
+        return;
+      }
+      const response = await axios.post(`${url}/api/employees/update-password`, {
+        currentPassword: oldPassword,
+        newPassword: newPassword
+      }, {
+        headers: {
+          authorization: `Bearer ${token}`
+        }
+      });
+      if (response.data?.message) {
+        showToast(response.data.message, "Success");
+        setShowPasswordSection(false);
+        setOldPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      }
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Failed to update password"), "Error");
+      console.error('Error Updating Password:', error);
     }
-
-    // Here you would typically validate old password and update
-   
   };
 
   const cancelPasswordUpdate = () => {
@@ -114,28 +122,29 @@ function Profile() {
       return;
     }
 
-   try{
-        const response = await axios.put(`${url}/api/employees/update-bank`,{
-            accountNumber:accountNumber,
-            ifscCode:ifscCode
-        },
-       {
-               headers: {
-                 authorization: `Bearer ${await getToken()}`
-               }
-             }
-      )
-      if(response.data.message){
-    showToast("Bank details updated successfully", "Success");
-    setShowBankEditSection(false);
-    fetchDashboardDetails();
-  }
-    }catch(error){
-      showToast(error.response.data.error,"Error")
-       console.error('Error Updating Password:', error);
+    try {
+      const token = await getToken();
+      if (!token) {
+        showToast("Session expired. Please login again.", "Error");
+        return;
+      }
+      const response = await axios.put(`${url}/api/employees/update-bank`, {
+        accountNumber: accountNumber,
+        ifscCode: ifscCode
+      }, {
+        headers: {
+          authorization: `Bearer ${token}`
+        }
+      });
+      if (response.data?.message) {
+        showToast("Bank details updated successfully", "Success");
+        setShowBankEditSection(false);
+        fetchDashboardDetails();
+      }
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Failed to update bank details"), "Error");
+      console.error('Error Updating Bank Details:', error);
     }
-
-
   };
 
   const cancelBankDetailsUpdate = () => {
@@ -164,12 +173,12 @@ function Profile() {
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatarBackground}>
-              <Text style={styles.avatarText}>{employeeData.name.charAt(0)}</Text>
+              <Text style={styles.avatarText}>{employeeData?.name ? employeeData.name.charAt(0).toUpperCase() : "E"}</Text>
             </View>
           </View>
-          <Text style={styles.userName}>{employeeData.name}</Text>
+          <Text style={styles.userName}>{employeeData?.name || "Employee"}</Text>
           <View style={styles.idBadge}>
-            <Text style={styles.idText}>Employee ID: {employeeData.id}</Text>
+            <Text style={styles.idText}>Employee ID: {employeeData?.id || "—"}</Text>
           </View>
         </View>
 
@@ -187,7 +196,7 @@ function Profile() {
               </View>
               <View style={styles.detailContent}>
                 <Text style={styles.detailLabel}>Full Name</Text>
-                <Text style={styles.detailValue}>{employeeData.name}</Text>
+                <Text style={styles.detailValue}>{employeeData?.name || "—"}</Text>
               </View>
             </View>
 
@@ -199,7 +208,7 @@ function Profile() {
               </View>
               <View style={styles.detailContent}>
                 <Text style={styles.detailLabel}>Phone Number</Text>
-                <Text style={styles.detailValue}>{employeeData.phone}</Text>
+                <Text style={styles.detailValue}>{employeeData?.phone || "—"}</Text>
               </View>
             </View>
           </View>
@@ -219,7 +228,9 @@ function Profile() {
               </View>
               <View style={styles.detailContent}>
                 <Text style={styles.detailLabel}>Base Salary</Text>
-                <Text style={styles.detailValue}>{employeeData.baseSalary.toLocaleString()}</Text>
+                <Text style={styles.detailValue}>
+                  {employeeData?.baseSalary != null ? `₹${Number(employeeData.baseSalary).toLocaleString()}` : "—"}
+                </Text>
               </View>
             </View>
 
@@ -231,7 +242,9 @@ function Profile() {
               </View>
               <View style={styles.detailContent}>
                 <Text style={styles.detailLabel}>Overtime Rate</Text>
-                <Text style={styles.detailValue}>{employeeData.overtimeRate}</Text>
+                <Text style={styles.detailValue}>
+                  {employeeData?.overtimeRate != null ? `₹${employeeData.overtimeRate}/hr` : "—"}
+                </Text>
               </View>
             </View>
           </View>
@@ -252,7 +265,7 @@ function Profile() {
                 </View>
                 <View style={styles.detailContent}>
                   <Text style={styles.detailLabel}>Account Number</Text>
-                  <Text style={styles.detailValue}>{employeeData.accountNumber}</Text>
+                  <Text style={styles.detailValue}>{employeeData?.accountNumber || "Not Set"}</Text>
                 </View>
               </View>
 
@@ -264,7 +277,7 @@ function Profile() {
                 </View>
                 <View style={styles.detailContent}>
                   <Text style={styles.detailLabel}>IFSC Code</Text>
-                  <Text style={styles.detailValue}>{employeeData.ifscCode}</Text>
+                  <Text style={styles.detailValue}>{employeeData?.ifscCode || "Not Set"}</Text>
                 </View>
                 <TouchableOpacity 
                   style={styles.editButton}

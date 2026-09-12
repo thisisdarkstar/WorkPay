@@ -6,6 +6,7 @@ import axios from 'axios';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Modal,
   ScrollView,
@@ -20,12 +21,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from "../../../context/EmployeeContext";
 import { useOfficeContextData } from '../../../context/OfficeContext';
-import { getToken } from '../../../services/ApiService';
+import { getApiErrorMessage, getToken } from '../../../services/ApiService';
 
 function EmployeeManagement() {
   const router = useRouter();
   const [employees, setEmployees] = useState([]);
   const [filteredEmployees, setFilteredEmployees] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [statusModalVisible, setStatusModalVisible] = useState(false);
@@ -56,22 +58,30 @@ function EmployeeManagement() {
 
   const fetchEmployees = async () => {
     try {
+      setLoading(true);
+      const token = await getToken();
+      if (!token) return;
       const response = await axios.get(`${url}/api/employees/getAll`,{
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
-      setEmployees(response.data);
-      setFilteredEmployees(response.data);
+      const data = Array.isArray(response.data) ? response.data : [];
+      setEmployees(data);
+      setFilteredEmployees(data);
     } catch (error) {
-      showToast(error.response.data.error,'Error');
+      showToast(getApiErrorMessage(error, 'Error fetching employees'), 'Error');
       console.error('Error fetching employees:', error);
+    } finally {
+      setLoading(false);
     }
   }
 
   const addEmployee = async () => {
     if (!validateForm()) return;
     try {
+      const token = await getToken();
+      if (!token) return;
       const response = await axios.post(`${url}/api/employees/add`, {
         name: formData.name,
         phone: formData.phone,
@@ -85,17 +95,15 @@ function EmployeeManagement() {
         password: formData.phone
       }, {
         headers: {
-          authorization: `Bearer ${await getToken()}`,
+          authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      console.log('Employee added:', response.data.data);
-      showToast(response.data.message,"Success")
+      showToast(response.data?.message || "Employee added successfully", "Success");
       setModalVisible(false);
       fetchEmployees();
     } catch (error) {
-        showToast(error.response.data.error,"Error")
-      console.log("Data",formData.name,formData.phone,formData.email,formData.baseSalary,formData.overtimeRate,formData.joinedDate,formData.officeId,formData.accountNumber,formData.ifscCode);
+      showToast(getApiErrorMessage(error, "Failed to add employee"), "Error");
       console.error('Error adding employee:', error);
     }
   };
@@ -103,6 +111,8 @@ function EmployeeManagement() {
   const editEmployee = async () => {
     if (!validateForm()) return;
     try {
+      const token = await getToken();
+      if (!token) return;
       const response = await axios.put(`${url}/api/employees/update/${editingEmployee.id}`, {
         name: formData.name,
         phone: formData.phone,
@@ -115,17 +125,15 @@ function EmployeeManagement() {
         ifscCode: formData.ifscCode
       }, {
         headers: {
-          authorization: `Bearer ${await getToken()}`,
+          authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      console.log('Employee edited:', response.data.data);
-       showToast(response.data.message,"Success")
+      showToast(response.data?.message || "Employee updated successfully", "Success");
       setModalVisible(false);
       fetchEmployees();
     } catch (error) {
-       showToast(error.response.data.error,"Error")
-      console.log("Data",formData.name,formData.phone,formData.email,formData.baseSalary,formData.overtimeRate,formData.joinedDate,formData.officeId,formData.accountNumber,formData.ifscCode);
+      showToast(getApiErrorMessage(error, "Failed to update employee"), "Error");
       console.error('Error editing employee:', error);
     }
   }
@@ -139,21 +147,23 @@ function EmployeeManagement() {
     if (!employeeToStatusUpdate) return;
     
     try {
+      const token = await getToken();
+      if (!token) return;
       const response = await axios.put(`${url}/api/employees/update-status/${employeeToStatusUpdate.id}`,
       {
         status: employeeToStatusUpdate.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
       }, {
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
-      showToast(response.data.message,"Success")
+      showToast(response.data?.message || "Status updated", "Success");
       setStatusModalVisible(false);
       setEmployeeToStatusUpdate(null);
       fetchEmployees();
     } catch (error) {
-       showToast(error.response.data.error,"Error")
-      console.error('Error Updating employee Status :', error);
+      showToast(getApiErrorMessage(error, "Failed to update status"), "Error");
+      console.error('Error updating status:', error);
     }
   };
 
@@ -271,7 +281,7 @@ function EmployeeManagement() {
       return false;
     }
     if (!formData.overtimeRate || isNaN(formData.overtimeRate)) {
-      showToast('Error', 'Please enter valid overtime rate','Error');
+      showToast('Please enter valid overtime rate','Error');
       return false;
     }
     if (!formData.joinedDate.trim()) {
@@ -306,21 +316,21 @@ function EmployeeManagement() {
       <View style={styles.cardContent}>
         <View style={styles.employeeInfo}>
           <View style={styles.avatarContainer}>
-            <Text style={styles.avatarText}>{item.name.charAt(0).toUpperCase()}</Text>
+            <Text style={styles.avatarText}>{item?.name ? item.name.charAt(0).toUpperCase() : 'E'}</Text>
           </View>
           <View style={styles.employeeDetails}>
-            <Text style={styles.employeeName}>{item.name}</Text>
-            <Text style={styles.employeePhone}>{item.phone}</Text>
+            <Text style={styles.employeeName}>{item?.name || 'Employee'}</Text>
+            <Text style={styles.employeePhone}>{item?.phone || ''}</Text>
           </View>
-        {statusFilter ===  "ALL" &&  <View style={{marginLeft: 'auto',borderRadius: 4,backgroundColor: item.status === 'ACTIVE' ? '#4CAF50' : '#F44336',paddingHorizontal: 8,paddingVertical: 2,alignSelf: 'flex-start',}}>
-                <Text style={[styles.employeeRole,{color:"#ffffff",fontWeight:"bold"}]}>{item.status}</Text>
+        {statusFilter ===  "ALL" &&  <View style={{marginLeft: 'auto',borderRadius: 4,backgroundColor: item?.status === 'ACTIVE' ? '#4CAF50' : '#F44336',paddingHorizontal: 8,paddingVertical: 2,alignSelf: 'flex-start',}}>
+                <Text style={[styles.employeeRole,{color:"#ffffff",fontWeight:"bold"}]}>{item?.status || 'UNKNOWN'}</Text>
           </View>}
         </View>
         
         <View style={styles.salaryInfo}>
           <Text style={styles.salaryLabel}>Base Salary</Text>
-          <Text style={styles.salaryAmount}>₹{item.baseSalary}</Text>
-          <Text style={styles.overtimeRate}>OT: ₹{item.overtimeRate}/hr</Text>
+          <Text style={styles.salaryAmount}>₹{item?.baseSalary || 0}</Text>
+          <Text style={styles.overtimeRate}>OT: ₹{item?.overtimeRate || 0}/hr</Text>
         </View>
       </View>
       
@@ -427,9 +437,23 @@ function EmployeeManagement() {
         <FlatList
           data={filteredEmployees}
           renderItem={renderEmployeeCard}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => item?.id?.toString() || Math.random().toString()}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            loading ? (
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#4da6ff" />
+              </View>
+            ) : (
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <Feather name="users" size={48} color="#486581" />
+                <Text style={{ color: '#8A9BAE', fontSize: 16, marginTop: 12 }}>
+                  {searchQuery ? 'No matching employees found' : 'No employees available'}
+                </Text>
+              </View>
+            )
+          }
         />
       </View>
 

@@ -6,6 +6,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -81,7 +82,7 @@ function ForgotPassword() {
               <MaterialCommunityIcons name="lock-reset" size={60} color="#4da6ff" />
               <Text style={styles.stepTitle}>Forgot Password?</Text>
               <Text style={styles.stepSubtitle}>
-                Don't worry! Enter your {isEmployee ? 'phone number' : 'email address'} and we'll send you a verification code.
+                {"Don't worry! Enter your "} {isEmployee ? 'phone number' : 'email address'} {" and we'll send you a verification code."}
               </Text>
             </View>
 
@@ -143,7 +144,7 @@ function ForgotPassword() {
               <MaterialCommunityIcons name="message-text" size={60} color="#4da6ff" />
               <Text style={styles.stepTitle}>Verify Code</Text>
               <Text style={styles.stepSubtitle}>
-                We've sent a 6-digit verification code to your {isEmployee ? 'phone' : 'email'}
+                {"We've sent a 6-digit verification code to your "} {isEmployee ? 'phone' : 'email'}
               </Text>
               <Text style={styles.contactDisplay}>{contactInfo}</Text>
             </View>
@@ -180,7 +181,7 @@ function ForgotPassword() {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.resendButton}>
-              <Text style={styles.resendText}>Didn't receive code? Resend</Text>
+              <Text style={styles.resendText}>{"Didn't receive code? Resend"}</Text>
             </TouchableOpacity>
           </>
         );
@@ -270,82 +271,88 @@ function ForgotPassword() {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-     <KeyboardAvoidingView
-       behavior='padding'
-       style={styles.container}
-       keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
-     >
-      {/* Background gradient effect */}
-      <View style={styles.backgroundGradient} />
-      
-      {/* Header with back button */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => step > 1 ? setStep(step - 1) : router.back()}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.container}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+      >
+        {/* Background gradient effect */}
+        <View style={styles.backgroundGradient} />
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#4da6ff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Password Recovery</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      {/* Progress indicator */}
-      <View style={styles.progressContainer}>
-        <View style={styles.progressStep}>
-          <View style={[
-            styles.progressDot, 
-            step >= 1 && styles.activeProgressDot
-          ]}>
-            {step > 1 ? (
-              <MaterialCommunityIcons name="check" size={12} color="#fff" />
-            ) : (
-              <Text style={[styles.progressNumber, step >= 1 && styles.activeProgressNumber]}>
-                1
-              </Text>
-            )}
+          {/* Header with back button */}
+          <View style={styles.header}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => step > 1 ? setStep(step - 1) : router.back()}
+            >
+              <MaterialCommunityIcons name="arrow-left" size={24} color="#4da6ff" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Password Recovery</Text>
+            <View style={styles.placeholder} />
           </View>
-          <View style={[styles.progressLine, step > 1 && styles.activeProgressLine]} />
-        </View>
-        
-        <View style={styles.progressStep}>
-          <View style={[
-            styles.progressDot, 
-            step >= 2 && styles.activeProgressDot
-          ]}>
-            {step > 2 ? (
-              <MaterialCommunityIcons name="check" size={12} color="#fff" />
-            ) : (
-              <Text style={[styles.progressNumber, step >= 2 && styles.activeProgressNumber]}>
-                2
-              </Text>
-            )}
-          </View>
-          <View style={[styles.progressLine, step > 2 && styles.activeProgressLine]} />
-        </View>
-        
-        <View style={styles.progressStep}>
-          <View style={[
-            styles.progressDot, 
-            step >= 3 && styles.activeProgressDot
-          ]}>
-            <Text style={[styles.progressNumber, step >= 3 && styles.activeProgressNumber]}>
-              3
-            </Text>
-          </View>
-        </View>
-      </View>
 
-      {/* Main Card */}
-      <View style={styles.mainCard}>
-        {renderStepContent()}
-      </View>
+          {/* Progress indicator */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressStep}>
+              <View style={[
+                styles.progressDot, 
+                step >= 1 && styles.activeProgressDot
+              ]}>
+                {step > 1 ? (
+                  <MaterialCommunityIcons name="check" size={12} color="#fff" />
+                ) : (
+                  <Text style={[styles.progressNumber, step >= 1 && styles.activeProgressNumber]}>
+                    1
+                  </Text>
+                )}
+              </View>
+              <View style={[styles.progressLine, step > 1 && styles.activeProgressLine]} />
+            </View>
+            
+            <View style={styles.progressStep}>
+              <View style={[
+                styles.progressDot, 
+                step >= 2 && styles.activeProgressDot
+              ]}>
+                {step > 2 ? (
+                  <MaterialCommunityIcons name="check" size={12} color="#fff" />
+                ) : (
+                  <Text style={[styles.progressNumber, step >= 2 && styles.activeProgressNumber]}>
+                    2
+                  </Text>
+                )}
+              </View>
+              <View style={[styles.progressLine, step > 2 && styles.activeProgressLine]} />
+            </View>
+            
+            <View style={styles.progressStep}>
+              <View style={[
+                styles.progressDot, 
+                step >= 3 && styles.activeProgressDot
+              ]}>
+                <Text style={[styles.progressNumber, step >= 3 && styles.activeProgressNumber]}>
+                  3
+                </Text>
+              </View>
+            </View>
+          </View>
 
-      {/* Footer */}
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Need help? Contact support</Text>
-      </View>
-    </KeyboardAvoidingView>
+          {/* Main Card */}
+          <View style={styles.mainCard}>
+            {renderStepContent()}
+          </View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Need help? Contact support</Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
   );
 }
@@ -356,7 +363,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f1419',
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 20,
+    paddingBottom: 30,
   },
   backgroundGradient: {
     position: 'absolute',

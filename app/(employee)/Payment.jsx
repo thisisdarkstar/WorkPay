@@ -5,7 +5,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { url } from '../../constants/EnvValue'
 import { useContextData } from '../../context/EmployeeContext'
-import { getToken } from '../../services/ApiService'
+import { getApiErrorMessage, getToken } from '../../services/ApiService'
 
 
 const months = [
@@ -31,32 +31,33 @@ function Payment() {
 
   // Helper function to calculate totals for a month's transactions
   const calculateMonthTotals = (transactions) => {
-    const overtime = transactions.reduce((acc, it) => acc + (it.payType === "OVERTIME" ? it.amount : 0), 0);
-    const deduction = transactions.reduce((acc, it) => acc + (it.payType === "DEDUCTION" ? it.amount : 0), 0);
-    const advance = transactions.reduce((acc, it) => acc + (it.payType === "ADVANCE" ? it.amount : 0), 0);
+    if (!Array.isArray(transactions)) return { overtime: 0, deduction: 0, advance: 0 };
+    const overtime = transactions.reduce((acc, it) => acc + (it.payType === "OVERTIME" ? (Number(it.amount) || 0) : 0), 0);
+    const deduction = transactions.reduce((acc, it) => acc + (it.payType === "DEDUCTION" ? (Number(it.amount) || 0) : 0), 0);
+    const advance = transactions.reduce((acc, it) => acc + (it.payType === "ADVANCE" ? (Number(it.amount) || 0) : 0), 0);
     
     return { overtime, deduction, advance };
   };
 
   // Helper function to determine payment status
   const getPaymentStatus = (monthTransactions, baseSalary) => {
-    // You can implement your own logic here
-    // For now, assuming if there are transactions, it's "Paid", otherwise "Pending"
-    return monthTransactions.length > 0 ? "Paid" : "Pending";
+    return Array.isArray(monthTransactions) && monthTransactions.length > 0 ? "Paid" : "Pending";
   };
 
   const fetchPaymentHistory = async () => {
     try {
       setLoading(true);
+      const token = await getToken();
+      if (!token) return;
       const response = await axios.get(`${url}/api/transactions/employee?year=${selectedYear}`, {
         headers: {
-          authorization: `Bearer ${await getToken()}`,
+          authorization: `Bearer ${token}`,
         }
       });
       const data = response.data;
       setPaymentData(data);
     } catch (err) {
-      showToast(err.response.data.error,'Error');
+      showToast(getApiErrorMessage(err, 'Failed to fetch payment history'), 'Error');
       console.log(err);
     } finally {
       setLoading(false);
@@ -111,7 +112,7 @@ function Payment() {
 
             <View style={styles.alert}>
               <MaterialCommunityIcons name="alert-circle-outline" size={24} color="#cce6ff" />
-              <Text style={styles.alertText}>Salary will be created on the last day of the month.</Text>
+              <Text style={styles.alertText}>Salary will be credited on the last day of the month.</Text>
             </View>
           </View>
         </View>
@@ -284,7 +285,7 @@ const styles = StyleSheet.create({
   alert: {
     width: "100%",
     flexDirection: "row",
-    alignItems: "start",
+    alignItems: "flex-start",
     padding: 12,
     borderRadius: 8,
     backgroundColor: "rgba(77, 166, 255, 0.1)",

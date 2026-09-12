@@ -3,12 +3,22 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import axios from 'axios'
 import * as Location from 'expo-location'
 import { useRouter } from "expo-router"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native"
+import Animated, {
+  Easing,
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated'
 import { SafeAreaView } from "react-native-safe-area-context"
 import { url } from '../../../constants/EnvValue'
 import { useContextData } from "../../../context/EmployeeContext"
-import { getToken, removeToken } from '../../../services/ApiService'
+import { getApiErrorMessage, getToken, removeToken } from '../../../services/ApiService'
 import { calculateHoursManual, formatMinutesToHHMM } from "../../../utils/TimeUtils"
 
 // Haversine formula to calculate distance between two coordinates
@@ -37,6 +47,48 @@ function Home() {
   const [dashboardDetails, setDashboardDetails] = useState(null);
   const {setEmployeeData, showToast} = useContextData();
 
+  // Animation values
+  const spinRotation = useSharedValue(0);
+  const buttonScale = useSharedValue(1);
+  const pulseScale = useSharedValue(1);
+  const pulseOpacity = useSharedValue(0.6);
+  const successScale = useSharedValue(0);
+
+  // Spinning loader animation
+  useEffect(() => {
+    if (locationLoading) {
+      spinRotation.value = 0;
+      spinRotation.value = withRepeat(
+        withTiming(360, { duration: 900, easing: Easing.linear }),
+        -1,
+        false
+      );
+      // Pulse ring when loading
+      pulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.4, { duration: 700, easing: Easing.out(Easing.ease) }),
+          withTiming(1, { duration: 700, easing: Easing.in(Easing.ease) })
+        ),
+        -1,
+        false
+      );
+      pulseOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0, { duration: 700 }),
+          withTiming(0.5, { duration: 700 })
+        ),
+        -1,
+        false
+      );
+    } else {
+      cancelAnimation(spinRotation);
+      cancelAnimation(pulseScale);
+      cancelAnimation(pulseOpacity);
+      pulseScale.value = withTiming(1, { duration: 200 });
+      pulseOpacity.value = withTiming(0, { duration: 200 });
+    }
+  }, [locationLoading]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setDateTime(new Date())
@@ -53,7 +105,6 @@ function Home() {
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         showToast('Permission to access location was denied', 'Warning');
-        setLocationPermission(false);
         return null;
       }
 
@@ -71,7 +122,7 @@ function Home() {
       return userLocation;
     } catch (error) {
       console.error('Error getting location:', error);
-      showToast('Failed to get current location','Error');
+      showToast('Failed to get current location', 'Error');
       return null;
     } finally {
       setLocationLoading(false);
@@ -80,17 +131,21 @@ function Home() {
 
   const fetchDashboardDetails = async () => {
     try {
+      const token = await getToken();
+      if (!token) return;
       const response = await axios.get(`${url}/api/employees/dashboard`, {
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
       const data = response.data;
       setDashboardDetails(data);
-      setEmployeeData(data.employeeDetails);
+      if (data?.employeeDetails) {
+        setEmployeeData(data.employeeDetails);
+      }
       console.log('Fetched dashboard details:', data);
     } catch (error) {
-      showToast(error.response.data.error,'Error');
+      showToast(getApiErrorMessage(error, 'Failed to fetch dashboard details'), 'Error');
       console.error('Error fetching dashboard details:', error);
     }
   }
@@ -140,28 +195,30 @@ function Home() {
         return;
       }
 
+      const token = await getToken();
+      if (!token) {
+        showToast('Session expired. Please log in again.', 'Error');
+        return;
+      }
+
       // Proceed with attendance action if location is verified
       const response = await axios.post(`${url}/api/attendances/mark`, {
         type: action,
         location: userLocation // Send current location to backend
       },{
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
       
       const data = response.data;
       if(data){
-        showToast(data.message,"Success");
+        showToast(data.message || "Attendance marked successfully", "Success");
         await fetchDashboardDetails();
       }
     } catch (error) {
-      if(error.response?.data?.message){
-        showToast(error.response.data.message,"Warning")
-      }
-      if(error.response?.data?.error){
-        showToast(error.response.data.error,"Error")
-      }
+      const errMsg = getApiErrorMessage(error, 'Error marking attendance');
+      showToast(errMsg, 'Error');
       console.error('Error marking attendance:', error);
     }
   }
@@ -169,10 +226,33 @@ function Home() {
   const timeString = dateTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
   const dateString = dateTime.toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
 
+  // Animated styles
+  const spinStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${spinRotation.value}deg` }],
+  }));
+
+  const buttonScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
+
+  const pulseRingStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+    opacity: pulseOpacity.value,
+  }));
+
+  const handleButtonPressIn = () => {
+    buttonScale.value = withSpring(0.92, { damping: 15, stiffness: 300 });
+  };
+
+  const handleButtonPressOut = () => {
+    buttonScale.value = withSpring(1, { damping: 12, stiffness: 200 });
+  };
+
   const handleLogout = async () => {
     await removeToken();
     router.replace('/');
   }
+
 
   return (
     <SafeAreaView style={styles.mainContainer}>
@@ -181,9 +261,9 @@ function Home() {
       {/* Header */}
       <View style={styles.headerContainer}>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Welcome back, {dashboardDetails?.employeeDetails?.name} </Text>
+          <Text style={styles.headerTitle}>Welcome back, {dashboardDetails?.employeeDetails?.name || "Employee"} </Text>
           <View style={styles.employeeIdBadge}>
-            <Text style={styles.employeeIdText}>ID: {dashboardDetails?.employeeDetails?.id}</Text>
+            <Text style={styles.employeeIdText}>ID: {dashboardDetails?.employeeDetails?.id || "—"}</Text>
           </View>
         </View>
         <View style={styles.menuContainer}>
@@ -238,50 +318,85 @@ function Home() {
             <Text style={styles.dateText}>{dateString}</Text>
           </View>
           
-          {dashboardDetails?.employeeDetails?.checkinTime === null &&
-            <TouchableOpacity 
+
+          {/* CHECK IN button */}
+          {!dashboardDetails?.employeeDetails?.checkinTime && (
+            <TouchableOpacity
               onPress={() => handleAttendanceAction('checkin')}
-              style={[styles.checkButton, locationLoading && styles.disabledButton]}
+              onPressIn={handleButtonPressIn}
+              onPressOut={handleButtonPressOut}
               disabled={locationLoading}
+              activeOpacity={1}
             >
-              <View style={styles.checkButtonInner}>
-                {locationLoading ? (
-                  <MaterialCommunityIcons name="loading" size={48} color="white" />
-                ) : (
-                  <MaterialCommunityIcons name="fingerprint" size={48} color="white" />
-                )}
-                <Text style={styles.checkButtonText}>Check In</Text>
-                <Text style={styles.checkButtonSubtext}>
-                  {locationLoading ? "Getting location..." : "Tap to clock in"}
-                </Text>
-              </View> 
+              <Animated.View style={[styles.buttonWrapper, buttonScaleStyle]}>
+                {/* Pulse ring */}
+                <Animated.View style={[styles.pulseRing, pulseRingStyle]} />
+                <View style={[styles.checkButton, locationLoading && styles.loadingButton]}>
+                  <View style={styles.checkButtonInner}>
+                    {locationLoading ? (
+                      <Animated.View style={spinStyle}>
+                        <MaterialCommunityIcons name="loading" size={48} color="white" />
+                      </Animated.View>
+                    ) : (
+                      <MaterialCommunityIcons name="fingerprint" size={48} color="white" />
+                    )}
+                    <Text style={styles.checkButtonText}>Check In</Text>
+                    <Text style={styles.checkButtonSubtext}>
+                      {locationLoading ? "Getting location..." : "Tap to clock in"}
+                    </Text>
+                  </View>
+                </View>
+              </Animated.View>
             </TouchableOpacity>
-          }
-         
-          {dashboardDetails?.employeeDetails?.checkinTime !== null && dashboardDetails?.employeeDetails?.checkoutTime === null &&
-            <TouchableOpacity 
+          )}
+
+          {/* CHECK OUT button */}
+          {dashboardDetails?.employeeDetails?.checkinTime && !dashboardDetails?.employeeDetails?.checkoutTime && (
+            <TouchableOpacity
               onPress={() => handleAttendanceAction('checkout')}
-              style={[styles.checkButton, styles.checkOutButton, locationLoading && styles.disabledButton]}
+              onPressIn={handleButtonPressIn}
+              onPressOut={handleButtonPressOut}
               disabled={locationLoading}
+              activeOpacity={1}
             >
-              <View style={styles.checkButtonInner}>
-                {locationLoading ? (
-                  <MaterialCommunityIcons name="loading" size={48} color="white" />
-                ) : (
-                  <MaterialCommunityIcons name="fingerprint" size={48} color="white" />
-                )}
-                <Text style={styles.checkButtonText}>Check Out</Text>
-                <Text style={styles.checkButtonSubtext}>
-                  {locationLoading ? "Getting location..." : "Tap to clock out"}
-                </Text>
-              </View>
+              <Animated.View style={[styles.buttonWrapper, buttonScaleStyle]}>
+                {/* Pulse ring */}
+                <Animated.View style={[styles.pulseRing, styles.pulseRingRed, pulseRingStyle]} />
+                <View style={[styles.checkButton, styles.checkOutButton, locationLoading && styles.loadingButton]}>
+                  <View style={styles.checkButtonInner}>
+                    {locationLoading ? (
+                      <Animated.View style={spinStyle}>
+                        <MaterialCommunityIcons name="loading" size={48} color="white" />
+                      </Animated.View>
+                    ) : (
+                      <MaterialCommunityIcons name="fingerprint" size={48} color="white" />
+                    )}
+                    <Text style={styles.checkButtonText}>Check Out</Text>
+                    <Text style={styles.checkButtonSubtext}>
+                      {locationLoading ? "Getting location..." : "Tap to clock out"}
+                    </Text>
+                  </View>
+                </View>
+              </Animated.View>
             </TouchableOpacity>
-          }
+          )}
+
+          {/* COMPLETED state */}
+          {dashboardDetails?.employeeDetails?.checkinTime && dashboardDetails?.employeeDetails?.checkoutTime && (
+            <View style={[styles.checkButton, styles.completedButton]}>
+              <View style={styles.checkButtonInner}>
+                <MaterialCommunityIcons name="check-decagram" size={48} color="#10B981" />
+                <Text style={[styles.checkButtonText, { color: '#10B981' }]}>Shift Done</Text>
+                <Text style={styles.checkButtonSubtext}>Completed for today</Text>
+              </View>
+            </View>
+          )}
         </View>
+
 
         {/* Today's Summary */}
         <View style={styles.summaryHeader}>
-          <Text style={styles.summaryTitle}>Today's Summary</Text>
+          <Text style={styles.summaryTitle}>{"Today's Summary"}</Text>
         </View>
 
         {/* Details */}
@@ -290,7 +405,7 @@ function Home() {
             <View style={styles.iconContainer}>
               <MaterialCommunityIcons name="login" size={24} color="#10B981" />
             </View>
-            <Text style={styles.detailTime}>{dashboardDetails?.employeeDetails?.checkinTime === null ? "-- : --" : dashboardDetails?.employeeDetails?.checkinTime}</Text>
+            <Text style={styles.detailTime}>{dashboardDetails?.employeeDetails?.checkinTime || "-- : --"}</Text>
             <Text style={styles.detailLabel}>Check In</Text>
           </View>
           
@@ -300,7 +415,7 @@ function Home() {
             <View style={[styles.iconContainer, { backgroundColor: '#FEF3F2' }]}>
               <MaterialCommunityIcons name="logout" size={24} color="#F04438" />
             </View>
-            <Text style={styles.detailTime}>{dashboardDetails?.employeeDetails?.checkoutTime === null ? "-- : --" : dashboardDetails?.employeeDetails?.checkoutTime}</Text>
+            <Text style={styles.detailTime}>{dashboardDetails?.employeeDetails?.checkoutTime || "-- : --"}</Text>
             <Text style={styles.detailLabel}>Check Out</Text>
           </View>
           
@@ -310,7 +425,11 @@ function Home() {
             <View style={[styles.iconContainer, { backgroundColor: '#FFFBEB' }]}>
               <MaterialCommunityIcons name="clock-plus-outline" size={24} color="#F79009" />
             </View>
-            <Text style={styles.detailTime}>{dashboardDetails?.employeeDetails?.overtime === null ? "-- : --" : dashboardDetails?.employeeDetails?.overtime/60}</Text>
+            <Text style={styles.detailTime}>
+              {dashboardDetails?.employeeDetails?.overtime != null
+                ? `${(Number(dashboardDetails.employeeDetails.overtime) / 60).toFixed(1)}h`
+                : "0h"}
+            </Text>
             <Text style={styles.detailLabel}>Overtime</Text>
           </View>
         </View>
@@ -476,10 +595,34 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: 'rgba(79, 70, 229, 0.3)',
   },
+  buttonWrapper: {
+    width: 160,
+    height: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pulseRing: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(79, 70, 229, 0.35)',
+  },
+  pulseRingRed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  loadingButton: {
+    opacity: 0.85,
+  },
   checkOutButton: {
     backgroundColor: '#EF4444',
     borderColor: 'rgba(239, 68, 68, 0.3)',
     shadowColor: "#EF4444",
+  },
+  completedButton: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.5)',
+    shadowColor: "#10B981",
   },
   disabledButton: {
     opacity: 0.6,

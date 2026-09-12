@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   StatusBar,
   StyleSheet,
@@ -15,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
-import { getToken } from '../../../services/ApiService';
+import { getApiErrorMessage, getToken } from '../../../services/ApiService';
 import {
   calculateTotalHours,
   calculateTotalOvertime,
@@ -44,9 +45,10 @@ const months = [
 ];
 
  const calculateMonthTotals = (transactions) => {
-    const overtime = transactions.reduce((acc, it) => acc + (it.payType === "OVERTIME" ? it.amount : 0), 0);
-    const deduction = transactions.reduce((acc, it) => acc + (it.payType === "DEDUCTION" ? it.amount : 0), 0);
-    const advance = transactions.reduce((acc, it) => acc + (it.payType === "ADVANCE" ? it.amount : 0), 0);
+    if (!Array.isArray(transactions)) return { overtime: 0, deduction: 0, advance: 0 };
+    const overtime = transactions.reduce((acc, it) => acc + (it?.payType === "OVERTIME" ? (Number(it?.amount) || 0) : 0), 0);
+    const deduction = transactions.reduce((acc, it) => acc + (it?.payType === "DEDUCTION" ? (Number(it?.amount) || 0) : 0), 0);
+    const advance = transactions.reduce((acc, it) => acc + (it?.payType === "ADVANCE" ? (Number(it?.amount) || 0) : 0), 0);
     
     return { overtime, deduction, advance };
   };
@@ -83,7 +85,7 @@ function EmployeeDetails() {
       });
       setEmployee(response.data.data);
     } catch (error) {
-      showToast(error.response.data.error,'Error');
+      showToast(getApiErrorMessage(error, 'Failed to fetch employee details'),'Error');
     }
   }
 
@@ -99,7 +101,7 @@ function EmployeeDetails() {
       const data = response.data;
       setAttendanceData(data);
     }catch(error){
-     showToast(error.response.data.error,'Error');
+      showToast(getApiErrorMessage(error, 'Failed to fetch attendance data'),'Error');
     }
   };
 
@@ -125,7 +127,7 @@ const fetchLeavesData = async ()=>{
       const data = response.data;
       setLeavesData(data)
     }catch(error){
-      showToast(error.response.data.error,'Error');
+      showToast(getApiErrorMessage(error, 'Failed to fetch leaves data'),'Error');
     }
 }
 
@@ -146,7 +148,7 @@ const fetchPaymentsData = async ()=>{
       const data = response.data;
       setPaymentsData(data)
     }catch(error){
-      showToast(error.response.data.error,'Error');
+      showToast(getApiErrorMessage(error, 'Failed to fetch payment history'),'Error');
     }
 }
 
@@ -232,49 +234,46 @@ useEffect(()=>{
     </View>
   );
 
-  const renderPaymentCard = ({ item }) => (
-    <View style={styles.paymentCard}>
-      <View style={styles.paymentHeader}>
-        <Text style={styles.paymentMonth}>{item.month} {paymentsData.year}</Text>
-        {/* <View style={[styles.paymentStatusBadge, { backgroundColor: `${getStatusColor(item.status)}20` }]}>
-          <Text style={[styles.paymentStatus, { color: getStatusColor(item.status) }]}>
-            {item.status}
-          </Text>
-        </View> */}
+  const renderPaymentCard = ({ item }) => {
+    const totals = calculateMonthTotals(item?.transactions || []);
+    const baseSalary = Number(paymentsData?.baseSalary) || 0;
+    const netSalary = baseSalary + totals.overtime - totals.deduction - totals.advance;
+    const salaryTx = Array.isArray(item?.transactions) ? item.transactions.find(i => i?.payType === "SALARY") : null;
+
+    return (
+      <View style={styles.paymentCard}>
+        <View style={styles.paymentHeader}>
+          <Text style={styles.paymentMonth}>{item?.month} {paymentsData?.year || ''}</Text>
+        </View>
+        
+        <View style={styles.paymentDetails}>
+          <View style={styles.paymentRow}>
+            <Text style={styles.paymentLabel}>Base Salary</Text>
+            <Text style={styles.paymentAmount}>₹{baseSalary.toLocaleString()}</Text>
+          </View>
+          <View style={styles.paymentRow}>
+            <Text style={styles.paymentLabel}>Overtime</Text>
+            <Text style={[styles.paymentAmount, { color: '#7ED321' }]}>+ ₹{totals.overtime}</Text>
+          </View>
+          <View style={styles.paymentRow}>
+            <Text style={styles.paymentLabel}>Deductions</Text>
+            <Text style={[styles.paymentAmount, { color: '#D0021B' }]}>- ₹{totals.deduction}</Text>
+          </View>
+          <View style={styles.paymentRow}>
+            <Text style={styles.paymentLabel}>Advance</Text>
+            <Text style={[styles.paymentAmount, { color: '#D0021B' }]}>- ₹{totals.advance}</Text>
+          </View>
+          <View style={[styles.paymentRow, styles.totalRow]}>
+            <Text style={styles.totalLabel}>Net Salary</Text>
+            <Text style={styles.totalAmount}>₹{netSalary}</Text>
+          </View>
+          {salaryTx?.date && (
+            <Text style={styles.paidDate}>Paid on: {salaryTx.date}</Text>
+          )}
+        </View>
       </View>
-      
-      <View style={styles.paymentDetails}>
-        <View style={styles.paymentRow}>
-          <Text style={styles.paymentLabel}>Base Salary</Text>
-          <Text style={styles.paymentAmount}>₹{paymentsData.baseSalary.toLocaleString()}</Text>
-        </View>
-        <View style={styles.paymentRow}>
-          <Text style={styles.paymentLabel}>Overtime</Text>
-          <Text style={[styles.paymentAmount, { color: '#7ED321' }]}>+ ₹{calculateMonthTotals(item.transactions).overtime}</Text>
-        </View>
-        <View style={styles.paymentRow}>
-          <Text style={styles.paymentLabel}>Deductions</Text>
-          <Text style={[styles.paymentAmount, { color: '#D0021B' }]}>- ₹{calculateMonthTotals(item.transactions).deduction}</Text>
-        </View>
-        <View style={styles.paymentRow}>
-          <Text style={styles.paymentLabel}>Advance</Text>
-          <Text style={[styles.paymentAmount, { color: '#D0021B' }]}>- ₹{calculateMonthTotals(item.transactions).advance}</Text>
-        </View>
-        <View style={[styles.paymentRow, styles.totalRow]}>
-          <Text style={styles.totalLabel}>Net Salary</Text>
-          <Text style={styles.totalAmount}>₹{
-            paymentsData.baseSalary +
-            calculateMonthTotals(item.transactions).overtime -
-            calculateMonthTotals(item.transactions).deduction - 
-            calculateMonthTotals(item.transactions).advance
-            }</Text>
-        </View>
-        {item.transactions.filter(i=>i.payType === "SALARY")[0]?.date && (
-          <Text style={styles.paidDate}>Paid on: {item.transactions.filter(i=>i.payType === "SALARY")[0]?.date}</Text>
-        )}
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderLeaveCard = ({ item }) => (
     <View style={styles.leaveCard}>
@@ -283,11 +282,11 @@ useEffect(()=>{
           <MaterialCommunityIcons name="calendar-outline" size={20} color="#4A90E2" />
           <View style={styles.leaveDates}>
             {item.fromDate === item.toDate ? (
-              <Text style={styles.leaveDate}>Leave On: {formatDay(item.fromDate)} {item.fromDate.split('-')[0]}</Text>
+              <Text style={styles.leaveDate}>Leave On: {item.fromDate ? formatDay(item.fromDate) : ''} {item.fromDate?.split('-')[0] || ''}</Text>
             ) : (
               <View>
-                <Text style={styles.leaveDate}>From: {formatDay(item.fromDate)} {item.fromDate.split('-')[0]}</Text>
-                <Text style={styles.leaveDate}>To: {formatDay(item.toDate)} {item.fromDate.split('-')[0]}</Text>
+                <Text style={styles.leaveDate}>From: {item.fromDate ? formatDay(item.fromDate) : ''} {item.fromDate?.split('-')[0] || ''}</Text>
+                <Text style={styles.leaveDate}>To: {item.toDate ? formatDay(item.toDate) : ''} {item.toDate?.split('-')[0] || ''}</Text>
               </View>
             )}
           </View>
@@ -307,14 +306,15 @@ useEffect(()=>{
         </View>
       </View>
       
-      <Text style={styles.leaveReason}>Reason: {item.reason}</Text>
+      <Text style={styles.leaveReason}>Reason: {item.reason || 'No reason provided'}</Text>
     </View>
   );
 
   if (!employee) {
     return (
-      <SafeAreaView style={styles.container}>
-        <Text style={styles.loadingText}>Loading...</Text>
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#4da6ff" />
+        <Text style={[styles.loadingText, { marginTop: 12 }]}>Loading employee details...</Text>
       </SafeAreaView>
     );
   }
@@ -336,23 +336,22 @@ useEffect(()=>{
       {/* Employee Info Card */}
       <View style={styles.employeeInfoCard}>
         <View style={styles.avatarContainer}>
-          <Text style={styles.avatarText}>{employee.name.charAt(0).toUpperCase()}</Text>
+          <Text style={styles.avatarText}>{employee?.name ? employee.name.charAt(0).toUpperCase() : 'E'}</Text>
         </View>
         <View style={styles.employeeInfo}>
-          <Text style={styles.employeeName}>{employee.name}</Text>
-          <Text style={styles.employeePhone}>{employee.phone}</Text>
-          <Text style={styles.employeePhone}>{employee.email}</Text>
+          <Text style={styles.employeeName}>{employee?.name || 'Employee'}</Text>
+          <Text style={styles.employeePhone}>{employee?.phone || ''}</Text>
+          {employee?.email ? <Text style={styles.employeePhone}>{employee.email}</Text> : null}
           <View style={styles.employeeMeta}>
-            <Text style={styles.employeeJoinDate}>Joined: {employee.joinedDate ? formatDay(employee.joinedDate):""} {employee.joinedDate?.split('-')[0]}</Text>
+            <Text style={styles.employeeJoinDate}>Joined: {employee?.joinedDate ? formatDay(employee.joinedDate):""} {employee?.joinedDate?.split('-')[0] || ''}</Text>
           </View>
           <View style={styles.salaryInfo}>
-            <Text style={styles.salaryText}>Base: ₹{employee.baseSalary.toLocaleString()}</Text>
-            <Text style={styles.overtimeText}>OT: ₹{employee.overtimeRate}/hr</Text>
+            <Text style={styles.salaryText}>Base: ₹{(Number(employee?.baseSalary) || 0).toLocaleString()}</Text>
+            <Text style={styles.overtimeText}>OT: ₹{employee?.overtimeRate || 0}/hr</Text>
           </View>
-            <Text style={{fontWeight:"bold",color:"white"}}>Account No: {employee.accountNumber}</Text>
-              <Text style={{fontWeight:"bold",color:"white"}}>Account No: {employee.ifscCode}</Text>
+          <Text style={{fontWeight:"bold",color:"white"}}>Account No: {employee?.accountNumber || 'N/A'}</Text>
+          <Text style={{fontWeight:"bold",color:"white"}}>IFSC Code: {employee?.ifscCode || 'N/A'}</Text>
         </View>
-      
       </View>
 
       {/* Tab Navigation */}
@@ -495,8 +494,8 @@ useEffect(()=>{
       <View style={styles.contentContainer}>
         {activeTab === 'attendance' && (
           <FlatList
-            data={attendanceData?.attendanceRecords}
-            keyExtractor={(item, index) => index.toString()}
+            data={attendanceData?.attendanceRecords || []}
+            keyExtractor={(item, index) => item?.id?.toString() || index.toString()}
             contentContainerStyle={styles.listContent}
             ListHeaderComponent={
               <View style={styles.summaryCard}>
@@ -523,38 +522,58 @@ useEffect(()=>{
             }
             renderItem={renderAttendanceCard}
             showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <MaterialCommunityIcons name="calendar-clock" size={48} color="#486581" />
+                <Text style={{ color: '#8A9BAE', fontSize: 16, marginTop: 12 }}>
+                  No attendance records found for this month
+                </Text>
+              </View>
+            }
           />
         )}
 
         {activeTab === 'payment' && (
           <FlatList
-            data={paymentsData?.transactionsData}
-            keyExtractor={(item,index) => index}
+            data={paymentsData?.transactionsData || []}
+            keyExtractor={(item,index) => item?.id?.toString() || index.toString()}
             contentContainerStyle={styles.listContent}
             renderItem={renderPaymentCard}
             showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <Feather name="credit-card" size={48} color="#486581" />
+                <Text style={{ color: '#8A9BAE', fontSize: 16, marginTop: 12 }}>
+                  No payment history found for {selectedPaymentYear}
+                </Text>
+              </View>
+            }
           />
         )}
 
         {activeTab === 'leave' && (
           <FlatList
-            data={leavesData.leaves}
-            keyExtractor={(item) => item.id}
+            data={leavesData?.leaves || []}
+            keyExtractor={(item, index) => item?.id?.toString() || index.toString()}
             contentContainerStyle={styles.listContent}
             ListHeaderComponent={
               <View style={styles.leaveSummaryCard}>
                 <Text style={styles.summaryTitle}>Leave Summary ({selectedLeaveYear})</Text>
                 <View style={styles.leaveSummaryGrid}>
                   <View style={styles.leaveSummaryItem}>
-                    <Text style={styles.summaryValue}>{employee.leaveBalance + leavesData.leaves.filter((i)=>i.status === "APPROVED" && i.type === "PAID").reduce((acc,i)=>acc+i.totalDays,0)}</Text>
+                    <Text style={styles.summaryValue}>
+                      {(Number(employee?.leaveBalance) || 0) + (Array.isArray(leavesData?.leaves) ? leavesData.leaves.filter((i)=>i?.status === "APPROVED" && i?.type === "PAID").reduce((acc,i)=>acc+(Number(i?.totalDays) || 0),0) : 0)}
+                    </Text>
                     <Text style={styles.summaryLabel}>Total Allocated</Text>
                   </View>
                   <View style={styles.leaveSummaryItem}>
-                    <Text style={[styles.summaryValue, { color: '#4A90E2' }]}>{leavesData.leaves.filter((i)=>i.status === "APPROVED" && i.type === "PAID").reduce((acc,i)=>acc+i.totalDays,0)}</Text>
+                    <Text style={[styles.summaryValue, { color: '#4A90E2' }]}>
+                      {Array.isArray(leavesData?.leaves) ? leavesData.leaves.filter((i)=>i?.status === "APPROVED" && i?.type === "PAID").reduce((acc,i)=>acc+(Number(i?.totalDays) || 0),0) : 0}
+                    </Text>
                     <Text style={styles.summaryLabel}>Used</Text>
                   </View>
                   <View style={styles.leaveSummaryItem}>
-                    <Text style={[styles.summaryValue, { color: '#7ED321' }]}>{employee.leaveBalance}</Text>
+                    <Text style={[styles.summaryValue, { color: '#7ED321' }]}>{employee?.leaveBalance ?? 0}</Text>
                     <Text style={styles.summaryLabel}>Remaining</Text>
                   </View>
                 </View>
@@ -562,6 +581,14 @@ useEffect(()=>{
             }
             renderItem={renderLeaveCard}
             showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <Feather name="calendar" size={48} color="#486581" />
+                <Text style={{ color: '#8A9BAE', fontSize: 16, marginTop: 12 }}>
+                  No leave records found for {selectedLeaveYear}
+                </Text>
+              </View>
+            }
           />
         )}
       </View>

@@ -1,12 +1,12 @@
 import Feather from "@expo/vector-icons/Feather";
 import axios from "axios";
 import { useEffect, useState } from "react";
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DataCard from "../../components/Attendance/DataCard";
 import { url } from "../../constants/EnvValue";
 import { useContextData } from "../../context/EmployeeContext";
-import { getToken } from "../../services/ApiService";
+import { getApiErrorMessage, getToken } from "../../services/ApiService";
 import { calculateTotalOvertime, countAbsentDays, countPresentDays, getTotalDaysInMonth } from "../../utils/TimeUtils";
 
 const months = [
@@ -24,9 +24,6 @@ const months = [
   { number: 12, name: "December" },
 ];
 
-
-
-
 function Attendance() {
   // Get today's month/year
   const today = new Date();
@@ -37,9 +34,8 @@ function Attendance() {
   const [currentMonth, setCurrentMonth] = useState(thisMonth);
   const [currentYear, setCurrentYear] = useState(thisYear);
   const [attendanceData, setAttendanceData] = useState([]);
-const {showToast} = useContextData()
-
-
+  const [loading, setLoading] = useState(false);
+  const { showToast } = useContextData();
 
   // Handle left arrow (previous month)
   const handlePrev = () => {
@@ -62,29 +58,33 @@ const {showToast} = useContextData()
   };
 
   const fetchAttendanceData = async () => {
-    try{
-      const response = await axios.get(`${url}/api/attendances/getAttendance?month=${currentMonth}&year=${currentYear}`
-        ,{
-          headers: {
-            Authorization: `Bearer ${await getToken()}`,
+    try {
+      setLoading(true);
+      const token = await getToken();
+      if (!token) return;
+      const response = await axios.get(`${url}/api/attendances/getAttendance?month=${currentMonth}&year=${currentYear}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
         }
-      }
-      );
-      const data = response.data;
-      setAttendanceData(data);
-    }catch(error){
-      showToast(error.response.data.error,'Error');
+      });
+      setAttendanceData(response.data);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, 'Error fetching attendance data'), 'Error');
       console.error("Error fetching attendance data:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(()=>{
+  useEffect(() => {
     fetchAttendanceData();
-  },[currentMonth,currentYear])
+  }, [currentMonth, currentYear]);
 
   // Disable right arrow if at today's month/year
   const isNextDisabled =
     currentMonth === thisMonth && currentYear === thisYear;
+
+  const records = attendanceData?.attendanceRecords || [];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -112,40 +112,51 @@ const {showToast} = useContextData()
         </TouchableOpacity>
       </View>
 
-      {/* FlatList for better performance */}
-      {attendanceData?.attendanceRecords?.length > 0 && 
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4da6ff" />
+        </View>
+      ) : (
         <FlatList
-          data={attendanceData.attendanceRecords}
-          keyExtractor={(item, index) => item.id.toString()}
+          data={records}
+          keyExtractor={(item, index) => item?.id?.toString() || index.toString()}
           contentContainerStyle={{ paddingBottom: 20 }}
           ListHeaderComponent={
             <View style={styles.overViewContainer}>
-            <View style={styles.overViewCard}>
-              <View style={styles.row}>
-                <Text style={styles.label}>Total Working Days</Text>
-                <Text style={styles.value}>{getTotalDaysInMonth(currentMonth, currentYear)}</Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Total Present Days</Text>
-                <Text style={styles.value}>{countPresentDays(attendanceData?.attendanceRecords)}</Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Total Absent Days</Text>
-                <Text style={styles.value}>{countAbsentDays(attendanceData?.attendanceRecords)}</Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Total Overtime Hours</Text>
-                <Text style={styles.value}>{calculateTotalOvertime(attendanceData?.attendanceRecords).toFixed(2)}hr</Text>
+              <View style={styles.overViewCard}>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Total Working Days</Text>
+                  <Text style={styles.value}>{getTotalDaysInMonth(currentMonth, currentYear)}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Total Present Days</Text>
+                  <Text style={styles.value}>{countPresentDays(records)}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Total Absent Days</Text>
+                  <Text style={styles.value}>{countAbsentDays(records)}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Total Overtime Hours</Text>
+                  <Text style={styles.value}>{(calculateTotalOvertime(records) || 0).toFixed(2)} hr</Text>
+                </View>
               </View>
             </View>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <View style={styles.cardWrapper}>
-            <DataCard data={item} />
-          </View>
-        )}
-      />}
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Feather name="calendar" size={48} color="#475569" />
+              <Text style={styles.emptyTitle}>No Attendance Records</Text>
+              <Text style={styles.emptySubtitle}>No entries logged for this month</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <View style={styles.cardWrapper}>
+              <DataCard data={item} />
+            </View>
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -181,6 +192,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 200,
+  },
   cardWrapper: {
     alignItems: "center",
     marginTop: 20,
@@ -212,5 +229,20 @@ const styles = StyleSheet.create({
   value: {
     color: "#fff",
     fontSize: 16,
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    gap: 8,
+  },
+  emptyTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  emptySubtitle: {
+    color: "#94A3B8",
+    fontSize: 14,
   },
 });

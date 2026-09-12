@@ -8,6 +8,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,9 +18,9 @@ import {
 } from 'react-native';
 import { url } from "../constants/EnvValue";
 import { useContextData } from "../context/EmployeeContext";
-import { storeToken } from '../services/ApiService';
+import { getApiErrorMessage, storeToken } from '../services/ApiService';
 
-function index() {
+function IndexScreen() {
   const [isEmployee, setIsEmployee] = useState(true);
   const [employeeLogin, setEmployeeLogin] = useState({ phone: '', password: '' });
   const [adminLogin, setAdminLogin] = useState({ email: '', password: '' });
@@ -68,13 +69,15 @@ function index() {
         }
       });
 
-      if (response.data.token) {
+      if (response.data?.token) {
         await storeToken(response.data.token);
-         showToast(response?.data?.message,"Success")
-        router.push('/(employee)/(home)/Home');
+        showToast(response?.data?.message || "Login successful", "Success");
+        router.replace('/(employee)/(home)/Home');
       }
     } catch (error) {
-      showToast(error.response?.data?.error,"Error")
+      const errMsg = getApiErrorMessage(error, "Login failed. Please check your credentials.");
+      showToast(errMsg, "Error");
+      setErrors({ login: errMsg });
     } finally {
       setIsLoading(false);
     }
@@ -111,16 +114,15 @@ function index() {
         password: adminLogin.password,
       });
       
-      if (response.data.token) {
+      if (response.data?.token) {
         await storeToken(response.data.token);
-        showToast(response?.data?.message,"Success")
-        router.push('/(admin)/(dashboard)/Dashboard');
+        showToast(response?.data?.message || "Login successful", "Success");
+        router.replace('/(admin)/(dashboard)/Dashboard');
       }
     } catch (error) {
-      showToast(error.response?.data?.error,"Error")
-      console.error('Admin login error:', error.response?.data?.error);
-      const errorMessage = error.response?.data?.error || 'Invalid email or password';
-      setErrors({ login: errorMessage });
+      const errMsg = getApiErrorMessage(error, "Invalid email or password");
+      showToast(errMsg, "Error");
+      setErrors({ login: errMsg });
     } finally {
       setIsLoading(false);
     }
@@ -128,23 +130,27 @@ function index() {
 
 
   return (
-           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-    <KeyboardAvoidingView
-      behavior='padding'
-      style={styles.container}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
-    >
-      {/* Background gradient effect */}
-      <View style={styles.backgroundGradient} />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.logoContainer}>
-          <Image source={require('../assets/images/icon.png')} style={styles.logo} />
-        </View>
-        <Text style={styles.title}>SANGHARSH GROUP</Text>
-        {/* <Text style={styles.subtitle}>Manage your salary with ease</Text> */}
-      </View>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.container}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+      >
+        {/* Background gradient effect */}
+        <View style={styles.backgroundGradient} />
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.logoContainer}>
+              <Image source={require('../assets/images/icon.png')} style={styles.logo} contentFit="contain" />
+            </View>
+            <Text style={styles.title}>WorkPay</Text>
+          </View>
 
       {/* Main Card */}
       <View style={styles.mainCard}>
@@ -279,6 +285,9 @@ function index() {
                     autoCapitalize="none"
                   />
                 </View>
+                {errors.email && (
+                  <Text style={styles.errorText}>{errors.email}</Text>
+                )}
               </View>
 
               <View style={styles.inputGroup}>
@@ -328,6 +337,10 @@ function index() {
                   </>
                 )}
               </TouchableOpacity>
+
+              {errors.login && (
+                <Text style={styles.loginErrorText}>{errors.login}</Text>
+              )}
             </>
           )}
 
@@ -346,21 +359,26 @@ function index() {
       {/* Footer */}
       <View style={styles.footer}>
         <Text style={styles.footerText}>Secure • Reliable • Easy</Text>
-      </View>  
-    </KeyboardAvoidingView>
-     </TouchableWithoutFeedback>
+      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
-export default index;
+export default IndexScreen;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f1419',
+  },
+  scrollContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
+    paddingVertical: 40,
   },
   backgroundGradient: {
     position: 'absolute',
@@ -544,10 +562,9 @@ const styles = StyleSheet.create({
     borderColor: '#ff4757',
     borderWidth: 1,
   },
-  logo:{
+  logo: {
     width: 80,
     height: 80,
-    resizeMode: 'contain',
     borderRadius: 40,
   }
 });

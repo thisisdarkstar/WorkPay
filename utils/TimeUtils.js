@@ -20,21 +20,23 @@ export  const getTotalDaysInMonth = (month, year) => {
 };
 
 export const countPresentDays = (data) => {
-  return data?.filter(item => item.status === "PRESENT" || item.status === "LATE").length;
+  return data?.filter(item => item.status === "PRESENT" || item.status === "LATE")?.length || 0;
 };
 
 export const countAbsentDays = (data) => {
-  return data?.filter(item => item.status === "ABSENT").length;
+  return data?.filter(item => item.status === "ABSENT")?.length || 0;
 };
 
 export const calculateTotalOvertime = (data) => {
-  return data?.reduce((total, item) => total + (item.overTime), 0) / 60;
-}
+  if (!Array.isArray(data)) return 0;
+  return data.reduce((total, item) => total + (Number(item?.overTime) || 0), 0) / 60;
+};
 
 
 export function formatMinutesToHHMM(totalMinutes) {
+    if (!totalMinutes || isNaN(totalMinutes)) return "00:00";
     const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
+    const minutes = Math.floor(totalMinutes % 60);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
 
@@ -43,17 +45,20 @@ export function calculateHoursManual(checkin, checkout) {
     if (!checkin || !checkout) return "00:00"; // fallback when data not ready
 
     function parseTime(timeStr) {
-        const [time, period] = timeStr.split(' ');
+        if (!timeStr || typeof timeStr !== 'string') return 0;
+        const parts = timeStr.trim().split(' ');
+        if (parts.length < 2) return 0;
+        const [time, period] = parts;
         const [hours, minutes] = time.split(':').map(Number);
         
-        let hour24 = hours;
-        if (period.toLowerCase() === 'pm' && hours !== 12) {
+        let hour24 = hours || 0;
+        if (period && period.toLowerCase() === 'pm' && hours !== 12) {
             hour24 += 12;
-        } else if (period.toLowerCase() === 'am' && hours === 12) {
+        } else if (period && period.toLowerCase() === 'am' && hours === 12) {
             hour24 = 0;
         }
         
-        return hour24 * 60 + minutes; // total minutes
+        return hour24 * 60 + (minutes || 0); // total minutes
     }
     
     const checkinMinutes = parseTime(checkin);
@@ -72,18 +77,30 @@ export function calculateHoursManual(checkin, checkout) {
 
 
 export function formatDay(dateString) {
+  if (!dateString) return "—";
   const date = new Date(dateString);
+  if (isNaN(date.getTime())) return "—";
   const day = date.getDate();
-  const month = months[date.getMonth()].name;
+  const month = months[date.getMonth()]?.name || "";
   return `${day} ${month}`;
 }
 
 export function formatTime(dateString) {
   if (!dateString) return "—";
 
+  let str = dateString;
+  if (typeof str !== 'string') {
+    if (str instanceof Date) {
+      str = str.toISOString();
+    } else {
+      return "—";
+    }
+  }
+
   // Remove Z so JS doesn’t convert
-  const localString = dateString.replace("Z", "");
+  const localString = str.replace("Z", "");
   const date = new Date(localString);
+  if (isNaN(date.getTime())) return "—";
 
   const hours = date.getHours();
   const minutes = date.getMinutes();
@@ -100,15 +117,16 @@ export function calculateTotalHours(checkIn, checkOut) {
   const start = new Date(checkIn);
   const end = new Date(checkOut);
   const diffMs = end - start;
-  if (diffMs <= 0) return "0h";
+  if (diffMs <= 0 || isNaN(diffMs)) return "0h";
   const hours = Math.floor(diffMs / (1000 * 60 * 60));
   const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
   return `${hours}h ${minutes}m`;
 }
 
 export function convertOvertime(minutes) {
-  if (!minutes || minutes === 0) return "0h";
-  const hrs = Math.floor(minutes / 60);
-  const mins = minutes % 60;
+  const num = Number(minutes);
+  if (!num || isNaN(num) || num <= 0) return "0h";
+  const hrs = Math.floor(num / 60);
+  const mins = Math.floor(num % 60);
   return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
 }

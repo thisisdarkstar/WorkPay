@@ -5,35 +5,71 @@ node_modules/
 
 # Expo
 .expo/
+.eas/
 dist/
 web-build/
 expo-env.d.ts
 
-# Native
+# Native Prebuild directories (Expo managed workflow)
+/android
+/ios
+
+# Android build outputs & local configuration
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+android/.cxx/
+android/app/.cxx/
+android/local.properties
+android/*.iml
+android/app/*.iml
+android/.idea/
+android/captures/
+
+# iOS build outputs & CocoaPods
+ios/build/
+ios/Pods/
+ios/*.xcworkspace/
+ios/*.xcuserdata/
+
+# Native Keystores and Certificates
 .kotlin/
 *.orig.*
 *.jks
 *.p8
 *.p12
 *.key
+*.keystore
 *.mobileprovision
 
 # Metro
 .metro-health-check*
 
-# debug
+# Logs & debug
+*.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# macOS
+# OS & Editor
 .DS_Store
+Thumbs.db
+ehthumbs.db
 *.pem
+.idea/
+.vscode/*
+!.vscode/settings.json
 
-# local env files
+# Local env files
+.env
 .env*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# typescript
+# TypeScript
 *.tsbuildinfo
 
 app-example

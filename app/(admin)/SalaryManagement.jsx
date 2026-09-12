@@ -5,6 +5,7 @@ import axios from 'axios'
 import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import {
+  ActivityIndicator,
   FlatList,
   Modal,
   StatusBar,
@@ -17,7 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { url } from '../../constants/EnvValue'
 import { useContextData } from "../../context/EmployeeContext"
-import { getToken } from "../../services/ApiService"
+import { getApiErrorMessage, getToken } from "../../services/ApiService"
 
 function AdminSalaryManagement() {
   const router = useRouter()
@@ -50,9 +51,9 @@ function AdminSalaryManagement() {
         }
       });
       const data = response.data;
-      setPaymentData(data.payments);
+      setPaymentData(Array.isArray(data?.payments) ? data.payments : []);
     } catch (err) {
-      showToast(err.response.data.error,'Error');
+      showToast(getApiErrorMessage(err, 'Failed to fetch payment history'),'Error');
       console.log(err);
     } finally {
       setLoading(false);
@@ -66,9 +67,10 @@ function AdminSalaryManagement() {
 
 
     const calculateMonthTotals = (transactions) => {
-    const overtime = transactions.reduce((acc, it) => acc + (it.payType === "OVERTIME" ? it.amount : 0), 0);
-    const deduction = transactions.reduce((acc, it) => acc + (it.payType === "DEDUCTION" ? it.amount : 0), 0);
-    const advance = transactions.reduce((acc, it) => acc + (it.payType === "ADVANCE" ? it.amount : 0), 0);
+    if (!Array.isArray(transactions)) return { overtime: 0, deduction: 0, advance: 0 };
+    const overtime = transactions.reduce((acc, it) => acc + (it?.payType === "OVERTIME" ? (Number(it?.amount) || 0) : 0), 0);
+    const deduction = transactions.reduce((acc, it) => acc + (it?.payType === "DEDUCTION" ? (Number(it?.amount) || 0) : 0), 0);
+    const advance = transactions.reduce((acc, it) => acc + (it?.payType === "ADVANCE" ? (Number(it?.amount) || 0) : 0), 0);
     
     return { overtime, deduction, advance };
   };
@@ -138,11 +140,11 @@ function AdminSalaryManagement() {
         }
       });
       const data = response.data;
-      showToast(data.message,"Success");
+      showToast(data.message || 'Salary settled successfully', "Success");
       fetchPaymentHistory();
       console.log(data)
     } catch (err) {
-      showToast(err.response.data.error,"Error")
+      showToast(getApiErrorMessage(err, 'Failed to settle salary'), "Error")
       console.log(err);
     }
 
@@ -190,13 +192,13 @@ function AdminSalaryManagement() {
       });
       const data = response.data;
       if(data.message){
-        showToast(data.message,"Success");
+        showToast(data.message, "Success");
         fetchPaymentHistory();
         setAdvanceAmount(null);
         setAdvanceModalVisible(false)
       }
     } catch (err) {
-      showToast(err.response.data.error,"Error");
+      showToast(getApiErrorMessage(err, 'Failed to process advance payment'), "Error");
       console.log(err);
     } finally {
       setProcessingAdvance(false);
@@ -234,7 +236,7 @@ function AdminSalaryManagement() {
         setDeductionModalVisible(false);
       }
     } catch (err) {
-      showToast(err.response.data.error, "Error");
+      showToast(getApiErrorMessage(err, 'Failed to process deduction'), "Error");
       console.log(err);
     } finally {
       setProcessingDeduction(false);
@@ -242,111 +244,113 @@ function AdminSalaryManagement() {
   }
 
   const navigateToEmployeeDetails = (employeeId) => {
-    router.push(`/employee-details/${employeeId}`)
+    router.push({
+      pathname: '/EmployeeDetails',
+      params: { id: employeeId }
+    });
   }
 
-  const renderEmployeeCard = ({ item }) => (
-    <View style={styles.employeeCard}>
-      {/* Employee Header */}
-      <TouchableOpacity 
-        style={styles.employeeHeader}
-        onPress={() => navigateToEmployeeDetails(item.id)}
-      >
-        <View style={styles.employeeAvatar}>
-          <Text style={styles.avatarText}>{item?.name?.charAt(0).toUpperCase()}</Text>
-        </View>
-        <View style={styles.employeeBasicInfo}>
-          <Text style={styles.employeeName}>{item?.name}</Text>
-          <Text style={styles.employeePhone}>{item?.phone}</Text>
-        </View>
-      </TouchableOpacity>
+  const renderEmployeeCard = ({ item }) => {
+    const totals = calculateMonthTotals(item?.transactions);
+    const base = Number(item?.baseSalary) || 0;
+    const isPaid = Array.isArray(item?.transactions) && item.transactions.some(i => i?.payType === "SALARY");
 
-      {/* Salary Breakdown */}
-      <View style={styles.salaryBreakdown}>
-        <View style={styles.salaryRow}>
-          <Text style={styles.salaryLabel}>Base Salary</Text>
-          <Text style={styles.salaryAmount}>₹{item?.baseSalary?.toLocaleString()}</Text>
-        </View>
-        
-        <View style={styles.salaryRow}>
-          <Text style={styles.salaryLabel}>Overtime ({item.t}h)</Text>
-          <Text style={[styles.salaryAmount, { color: '#7ED321' }]}>
-            + ₹{calculateMonthTotals(item.transactions).overtime}
-          </Text>
-        </View>
-        
-       
+    return (
+      <View style={styles.employeeCard}>
+        {/* Employee Header */}
+        <TouchableOpacity 
+          style={styles.employeeHeader}
+          onPress={() => navigateToEmployeeDetails(item.empId || item.id)}
+        >
+          <View style={styles.employeeAvatar}>
+            <Text style={styles.avatarText}>{item?.name ? item.name.charAt(0).toUpperCase() : 'E'}</Text>
+          </View>
+          <View style={styles.employeeBasicInfo}>
+            <Text style={styles.employeeName}>{item?.name || 'Employee'}</Text>
+            <Text style={styles.employeePhone}>{item?.phone || ''}</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Salary Breakdown */}
+        <View style={styles.salaryBreakdown}>
+          <View style={styles.salaryRow}>
+            <Text style={styles.salaryLabel}>Base Salary</Text>
+            <Text style={styles.salaryAmount}>₹{base.toLocaleString()}</Text>
+          </View>
+          
+          <View style={styles.salaryRow}>
+            <Text style={styles.salaryLabel}>Overtime</Text>
+            <Text style={[styles.salaryAmount, { color: '#7ED321' }]}>
+              + ₹{totals.overtime}
+            </Text>
+          </View>
+          
           <View style={styles.salaryRow}>
             <Text style={styles.salaryLabel}>Deductions </Text>
             <Text style={[styles.salaryAmount, { color: '#D0021B' }]}>
-              - ₹{calculateMonthTotals(item.transactions).deduction}
+              - ₹{totals.deduction}
             </Text>
           </View>
-        
-        
-        
+          
           <View style={styles.salaryRow}>
             <Text style={styles.salaryLabel}>Advance Payment</Text>
             <Text style={[styles.salaryAmount, { color: '#D0021B' }]}>
-              - ₹{calculateMonthTotals(item.transactions).advance}
+              - ₹{totals.advance}
             </Text>
           </View>
-        
-        
-        <View style={[styles.salaryRow, styles.finalSalaryRow]}>
-          <Text style={styles.finalSalaryLabel}>Final Salary</Text>
-          <Text style={styles.finalSalaryAmount}>₹{item.baseSalary + 
-          calculateMonthTotals(item.transactions).overtime - 
-          calculateMonthTotals(item.transactions).deduction - 
-          calculateMonthTotals(item.transactions).advance}</Text>
+          
+          <View style={[styles.salaryRow, styles.finalSalaryRow]}>
+            <Text style={styles.finalSalaryLabel}>Final Salary</Text>
+            <Text style={styles.finalSalaryAmount}>₹{base + totals.overtime - totals.deduction - totals.advance}</Text>
+          </View>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          {/* Current Month - Settle Salary */}
+          {!isPaid && isCurrentMonth() && (
+            <TouchableOpacity
+              style={styles.settleButton}
+              onPress={() => handleSettleSalary(item)}
+            >
+              <MaterialCommunityIcons name="check-circle" size={16} color="#fff" />
+              <Text style={styles.settleButtonText}>Settle Salary</Text>
+            </TouchableOpacity>
+          )}
+          
+          {/* Advance Payment - Only for Current Month */}
+          {!isPaid && isCurrentMonth() && (
+            <TouchableOpacity
+              style={styles.advanceButton}
+              onPress={() => handleAdvancePayment(item)}
+            >
+              <MaterialCommunityIcons name="cash" size={16} color="#4A90E2" />
+              <Text style={styles.advanceButtonText}>Advance</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Deduction Button - Only for Current Month */}
+          {!isPaid && isCurrentMonth() && (
+            <TouchableOpacity
+              style={styles.deductionButton}
+              onPress={() => handleDeductionPayment(item)}
+            >
+              <MaterialCommunityIcons name="minus-circle" size={16} color="#F5A623" />
+              <Text style={styles.deductionButtonText}>Deduction</Text>
+            </TouchableOpacity>
+          )}
+          
+          {/* Paid Status Indicator */}
+          {isPaid && (
+            <View style={styles.paidIndicator}>
+              <MaterialCommunityIcons name="check-circle" size={16} color="#7ED321" />
+              <Text style={styles.paidText}>Salary Paid</Text>
+            </View>
+          )}
         </View>
       </View>
-
-      {/* Action Buttons */}
-      <View style={styles.actionButtons}>
-        {/* Current Month - Settle Salary */}
-        {(item.transactions.filter(i=>i.payType === "SALARY").length === 0) && isCurrentMonth() && (
-          <TouchableOpacity
-            style={styles.settleButton}
-            onPress={() => handleSettleSalary(item)}
-          >
-            <MaterialCommunityIcons name="check-circle" size={16} color="#fff" />
-            <Text style={styles.settleButtonText}>Settle Salary</Text>
-          </TouchableOpacity>
-        )}
-        
-        {/* Advance Payment - Only for Current Month */}
-        {(item.transactions.filter(i=>i.payType === "SALARY").length === 0) && isCurrentMonth() && (
-          <TouchableOpacity
-            style={styles.advanceButton}
-            onPress={() => handleAdvancePayment(item)}
-          >
-            <MaterialCommunityIcons name="cash" size={16} color="#4A90E2" />
-            <Text style={styles.advanceButtonText}>Advance</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Deduction Button - Only for Current Month */}
-        {(item.transactions.filter(i=>i.payType === "SALARY").length === 0) && isCurrentMonth() && (
-          <TouchableOpacity
-            style={styles.deductionButton}
-            onPress={() => handleDeductionPayment(item)}
-          >
-            <MaterialCommunityIcons name="minus-circle" size={16} color="#F5A623" />
-            <Text style={styles.deductionButtonText}>Deduction</Text>
-          </TouchableOpacity>
-        )}
-        
-        {/* Paid Status Indicator */}
-        {(item.transactions.filter(i=>i.payType === "SALARY").length > 0) && (
-          <View style={styles.paidIndicator}>
-            <MaterialCommunityIcons name="check-circle" size={16} color="#7ED321" />
-            <Text style={styles.paidText}>Salary Paid</Text>
-          </View>
-        )}
-      </View>
-    </View>
-  )
+    );
+  }
 
   const getCurrentMonthName = () => {
     const months = [
@@ -374,8 +378,9 @@ function AdminSalaryManagement() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <Text style={styles.loadingText}>Loading salary data...</Text>
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#4da6ff" />
+        <Text style={[styles.loadingText, { marginTop: 12 }]}>Loading salary data...</Text>
       </SafeAreaView>
     )
   }
@@ -421,11 +426,19 @@ function AdminSalaryManagement() {
 
       {/* Employee List */}
       <FlatList
-        data={paymentData}
-        keyExtractor={(item) => item.empId}
+        data={paymentData || []}
+        keyExtractor={(item) => item?.empId?.toString() || item?.id?.toString() || Math.random().toString()}
         contentContainerStyle={styles.listContent}
         renderItem={renderEmployeeCard}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={{ padding: 40, alignItems: 'center' }}>
+            <MaterialIcons name="payments" size={48} color="#486581" />
+            <Text style={{ color: '#8A9BAE', fontSize: 16, marginTop: 12 }}>
+              No salary records found for {getSelectedMonthName()} {selectedYear}
+            </Text>
+          </View>
+        }
       />
 
       {/* Advance Payment Modal */}

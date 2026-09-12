@@ -6,44 +6,44 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
-import { getToken } from '../../../services/ApiService';
-
+import { useContextData } from '../../../context/EmployeeContext';
+import { getApiErrorMessage, getToken } from '../../../services/ApiService';
 
 function AttendanceStatus() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState([]);
-    const {id,status,officeName} = useLocalSearchParams();
+  const { id, status, officeName } = useLocalSearchParams();
+  const { showToast } = useContextData();
 
-    console.log(id,status)
-
-    const fetchEmployeesData = async ()=>{
-          try {
-       let apiUrl =  `${url}/api/attendances/getEmployeesByStatus/${id}/${status}`
+  const fetchEmployeesData = async () => {
+    try {
+      setLoading(true);
+      const token = await getToken();
+      if (!token) return;
+      let apiUrl = `${url}/api/attendances/getEmployeesByStatus/${id}/${status}`;
 
       const response = await axios.get(apiUrl, {
-         headers: {
-          authorization: `Bearer ${await getToken()}`,
+        headers: {
+          authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         }
       });
-      console.log(response.data.employees);
-      setEmployees(response.data.employees)
+      setEmployees(response.data?.employees || []);
     } catch (error) {
-      showToast(error?.response?.data?.error || "Failed to finalize attendance", "Error");
-      console.error("Error finalizing attendance:", error);
-    } 
+      showToast(getApiErrorMessage(error, "Failed to load employee status"), "Error");
+      console.error("Error loading employee status:", error);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    useEffect(()=>{
-        fetchEmployeesData();
-    },[id,status])
+  useEffect(() => {
+    fetchEmployeesData();
+  }, [id, status]);
 
-
-
-  const getStatusColor = (status) => {
-    switch(status) {
+  const getStatusColor = (statusVal) => {
+    switch(statusVal) {
       case 'PRESENT':
         return '#00D4AA';
       case 'ABSENT':
@@ -55,8 +55,8 @@ function AttendanceStatus() {
     }
   };
 
-  const getStatusBackground = (status) => {
-    switch(status) {
+  const getStatusBackground = (statusVal) => {
+    switch(statusVal) {
       case 'PRESENT':
         return '#00D4AA20';
       case 'ABSENT':
@@ -78,14 +78,13 @@ function AttendanceStatus() {
         >
           <AntDesign name="arrowleft" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{`${id === "all" ? `Total  Employees`: `${officeName} Employees`}`}</Text>
+        <Text style={styles.headerTitle}>{`${id === "all" ? `Total Employees`: `${officeName || 'Office'} Employees`}`}</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <View style={{backgroundColor:getStatusBackground(status),marginTop:20,padding:4,borderRadius:5,width:"20%",alignSelf:"center",justifyContent:"center",alignItems:"center"}}>
-          <Text style={{color:getStatusColor(status),fontWeight:"bold"}}>{status}</Text>
+      <View style={{ backgroundColor: getStatusBackground(status), marginTop: 20, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 8, alignSelf: "center", justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ color: getStatusColor(status), fontWeight: "bold", fontSize: 14 }}>{status}</Text>
       </View>
-
 
       {/* Employees List */}
       <ScrollView style={styles.listContainer}>
@@ -102,12 +101,12 @@ function AttendanceStatus() {
         ) : (
           <View style={styles.employeesContainer}>
             {employees?.map((employee, index) => (
-              <View key={employee.id} style={styles.employeeCard}>
+              <View key={employee?.id || index} style={styles.employeeCard}>
                 {/* Employee Avatar/Icon */}
                 <View style={styles.avatarContainer}>
                   <View style={styles.avatar}>
                     <Text style={styles.avatarText}>
-                      {employee?.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
+                      {(employee?.name || "E").split(' ').filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase() || "E"}
                     </Text>
                   </View>
                   <View 
@@ -121,20 +120,20 @@ function AttendanceStatus() {
                 {/* Employee Details */}
                 <View style={styles.employeeDetails}>
                   <View style={styles.employeeHeader}>
-                    <Text style={styles.employeeName}>{employee?.name}</Text>
+                    <Text style={styles.employeeName}>{employee?.name || "Unknown"}</Text>
                   </View>
                   
                   <View style={styles.employeeInfo}>
                     <View style={styles.infoRow}>
-                      <Text style={styles.infoText}>EmpId:  <Text style={{color:"white",fontWeight:"bold"}}>{employee?.id}</Text></Text>
+                      <Text style={styles.infoText}>EmpId:  <Text style={{color:"white",fontWeight:"bold"}}>{employee?.id || "—"}</Text></Text>
                     </View>
                   </View>
 
                   <View style={styles.phoneRow}>
-                    <Text style={styles.infoText}>Phone:  <Text style={{color:"white",fontWeight:"bold"}}>{employee?.phone}</Text></Text>
+                    <Text style={styles.infoText}>Phone:  <Text style={{color:"white",fontWeight:"bold"}}>{employee?.phone || "—"}</Text></Text>
                   </View>
 
-                  <Text style={{color:"#8A9BAE",fontWeight:"bold"}}>Office Name : <Text style={{color:"white"}}>{employee?.office.name}</Text></Text>
+                  <Text style={{color:"#8A9BAE",fontWeight:"bold"}}>Office Name : <Text style={{color:"white"}}>{employee?.office?.name || "—"}</Text></Text>
                 </View>
 
               </View>

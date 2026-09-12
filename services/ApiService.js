@@ -37,3 +37,19 @@ export const hasToken = async () => {
   const token = await getToken();
   return !!token;
 };
+
+/**
+ * Safely extracts a user-friendly error message from any caught error.
+ * Handles Axios network errors, API error payloads, timeouts, or unknown errors.
+ */
+export const getApiErrorMessage = (error, defaultMsg = 'Something went wrong. Please check your network connection.') => {
+  if (!error) return defaultMsg;
+  if (typeof error === 'string') return error;
+
+  return (
+    error?.response?.data?.error ||
+    error?.response?.data?.message ||
+    error?.message ||
+    defaultMsg
+  );
+};

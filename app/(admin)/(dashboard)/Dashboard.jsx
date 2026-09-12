@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
 import { useOfficeContextData } from '../../../context/OfficeContext';
-import { getToken, removeToken } from '../../../services/ApiService';
+import { getApiErrorMessage, getToken, removeToken } from '../../../services/ApiService';
 import { formatDay } from "../../../utils/TimeUtils";
 
 
@@ -28,20 +28,22 @@ function Dashboard() {
   // Modified dashboardDetails to accept officeId parameter
   const dashboardDetails = async (officeId) => {
     try {
-      let apiUrl =  `${url}/api/attendances/getTodayAttendance/${officeId}`
+      const token = await getToken();
+      if (!token) return null;
+      let apiUrl = `${url}/api/attendances/getTodayAttendance/${officeId}`;
         
       const response = await axios.get(apiUrl, {
         headers: {
-          authorization: `Bearer ${await getToken()}`,
+          authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         }
       });
-      const data = response.data;
-      setData(data);
-      setOfficeData(data.offices);
-      setCurrentOffice(data.office.id);
+      const resData = response.data;
+      setData(resData);
+      if (resData?.offices) setOfficeData(resData.offices);
+      if (resData?.office?.id) setCurrentOffice(resData.office.id);
     } catch (error) {
-      showToast(error?.response?.data?.error ,'Error');
+      showToast(getApiErrorMessage(error, 'Error fetching dashboard details'), 'Error');
       console.error('Error fetching dashboard details:', error);
       return null;
     }
@@ -50,18 +52,20 @@ function Dashboard() {
   const handleFinalizeAttendance = async () => {
     try {
       setLoading(true);
-       let apiUrl =  `${url}/api/attendances/finalizeAttendance/${currentOffice}`
+      const token = await getToken();
+      if (!token) return;
+      let apiUrl = `${url}/api/attendances/finalizeAttendance/${currentOffice}`;
 
       const response = await axios.post(apiUrl, {}, {
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
-      showToast(response.data.message || "Attendance finalized", "Success");
+      showToast(response.data?.message || "Attendance finalized", "Success");
       await dashboardDetails(currentOffice); // refresh stats after finalization
       await checkAttendanceFinalization(currentOffice); // update finalization status
     } catch (error) {
-      showToast(error?.response?.data?.error || "Failed to finalize attendance", "Error");
+      showToast(getApiErrorMessage(error, "Failed to finalize attendance"), "Error");
       console.error("Error finalizing attendance:", error);
     } finally {
       setLoading(false);
@@ -69,17 +73,19 @@ function Dashboard() {
   }
 
   const checkAttendanceFinalization = async (officeId) => {
+    if (!officeId || officeId === 'all') return;
     try {
-      console.log(officeId)
-      let apiUrl =  `${url}/api/attendances/checkBulkAttendanceStatus/${officeId}`
+      const token = await getToken();
+      if (!token) return;
+      let apiUrl = `${url}/api/attendances/checkBulkAttendanceStatus/${officeId}`;
 
       const response = await axios.get(apiUrl, {
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
-      setIsAttendanceFinalized(response.data.isBulkMarkingCompleted);
-      setIsEmployeesAvailable(response.data.totalEmployees > 0);
+      setIsAttendanceFinalized(!!response.data?.isBulkMarkingCompleted);
+      setIsEmployeesAvailable((response.data?.totalEmployees || 0) > 0);
     } catch (error) {
       console.error('Error checking attendance finalization:', error);
     }
@@ -90,18 +96,13 @@ function Dashboard() {
     setCurrentOffice(officeId);
     setShowOfficeList(false);
     dashboardDetails(officeId); // Immediately fetch data for selected office
-    if(officeId !== "all"){
-        checkAttendanceFinalization(officeId);
+    if (officeId !== "all") {
+      checkAttendanceFinalization(officeId);
     }
-
   }
-
 
   useEffect(() => {
     dashboardDetails('all');
-    if(currentOffice !== "all"){
-        checkAttendanceFinalization(officeId);
-    }
   }, []);
   
   const stats = [
@@ -238,7 +239,7 @@ function Dashboard() {
                     {renderIcon(stat.icon, stat.iconSet, stat.color)}
                   </View>
                   <View style={styles.cardText}>
-                    <Text style={styles.cardCount}>{stat.field === "totalPresent" ? (data?.["totalPresent"]) : data?.[stat.field]}</Text>
+                    <Text style={styles.cardCount}>{stat.field === "totalPresent" ? (data?.["totalPresent"] ?? 0) : (data?.[stat.field] ?? 0)}</Text>
                     <Text style={styles.cardLabel}>{stat.label}</Text>
                   </View>
                 </View>
@@ -250,14 +251,14 @@ function Dashboard() {
         </View>
 
         {/* Absent List */}
-       {data?.absentList.length > 0 && <View style={styles.sectionContainer}>
+       {Array.isArray(data?.absentList) && data.absentList.length > 0 && <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Absent Today</Text>
           <View style={styles.recentActivityContainer}>
-            {data?.absentList.map((employee, index) => (
-              <View key={index} style={styles.recentActivityItem}>
+            {data.absentList.map((employee, index) => (
+              <View key={employee?.id || index} style={styles.recentActivityItem}>
                 <View style={{gap:5}}>
-                  <Text style={{color:'#FFFFFF',fontSize:18}}>{employee?.name}</Text>
-                  <Text style={{color:'#8A9BAE',fontSize:14}}>ID: {employee?.id}</Text>
+                  <Text style={{color:'#FFFFFF',fontSize:18}}>{employee?.name || "Unknown"}</Text>
+                  <Text style={{color:'#8A9BAE',fontSize:14}}>ID: {employee?.id || "—"}</Text>
                 </View>
                 <View style={{paddingHorizontal:10,paddingVertical:5,borderRadius:8,backgroundColor:'#a51212ff',alignItems:'center',justifyContent:'center'}}>
                   <Text style={{color:'#ffffff',fontSize:14,fontWeight:'600'}}>Absent</Text>
@@ -370,7 +371,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#2A3441',
-    position:"relative"
   },
   cardContent: {
     padding: 16,

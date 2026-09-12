@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { url } from "../../../constants/EnvValue";
 import { useContextData } from "../../../context/EmployeeContext";
-import { getToken } from "../../../services/ApiService";
+import { getApiErrorMessage, getToken } from "../../../services/ApiService";
 
 function HolidayManagement() {
   const currentYear = new Date().getFullYear();
@@ -41,21 +41,21 @@ function HolidayManagement() {
         }
       });
       
-      // Transform the response to match the frontend format
-      const transformedHolidays = response.data.map(monthItem => ({
-        month: `${monthItem.month} ${currentYear}`,
-        holidays: monthItem.holidays.map(holiday => ({
-          id: holiday.id,
-          date: new Date(holiday.date).getDate().toString().padStart(2, "0"),
-          name: holiday.description,
-          fullDate: holiday.date
-        }))
+      const raw = Array.isArray(response.data) ? response.data : [];
+      const transformedHolidays = raw.map(monthItem => ({
+        month: `${monthItem?.month || ''} ${currentYear}`,
+        holidays: Array.isArray(monthItem?.holidays) ? monthItem.holidays.map(holiday => ({
+          id: holiday?.id,
+          date: holiday?.date ? new Date(holiday.date).getDate().toString().padStart(2, "0") : '--',
+          name: holiday?.description || 'Holiday',
+          fullDate: holiday?.date
+        })) : []
       }));
       
       setHolidays(transformedHolidays);
     } catch (error) {
       console.error('Error fetching holidays:', error);
-      showToast( 'Failed to fetch holidays','Error');
+      showToast(getApiErrorMessage(error, 'Failed to fetch holidays'),'Error');
     } finally {
       setIsLoading(false);
     }
@@ -87,7 +87,7 @@ function HolidayManagement() {
       await fetchHolidays();
     } catch (error) {
       console.error('Error adding holiday:', error);
-      showToast( 'Failed to add holiday','Error');
+      showToast(getApiErrorMessage(error, 'Failed to add holiday'),'Error');
     } finally {
       setIsLoading(false);
     }
@@ -117,7 +117,7 @@ function HolidayManagement() {
       await fetchHolidays();
     } catch (error) {
       console.error('Error deleting holiday:', error);
-      showToast('Failed to delete holiday','Error');
+      showToast(getApiErrorMessage(error, 'Failed to delete holiday'),'Error');
     } finally {
       setIsLoading(false);
     }
@@ -133,7 +133,7 @@ function HolidayManagement() {
   }, []);
 
   const getTotalHolidays = () => {
-    return holidays.reduce((acc, m) => acc + m.holidays.length, 0);
+    return holidays.reduce((acc, m) => acc + (Array.isArray(m?.holidays) ? m.holidays.length : 0), 0);
   };
 
   return (
@@ -309,7 +309,7 @@ function HolidayManagement() {
             <Text style={styles.deleteMessage}>
               Are you sure you want to delete{' '}
               <Text style={styles.holidayNameHighlight}>
-                "{holidayToDelete?.name}"
+                &quot;{holidayToDelete?.name}&quot;
               </Text>
               ? This action cannot be undone.
             </Text>

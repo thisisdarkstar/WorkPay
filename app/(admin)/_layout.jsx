@@ -3,12 +3,15 @@ import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AdBanner } from '../../components/ads/AdBanner';
 
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom || 10 }]}>
+    <View style={styles.tabBarWrapper}>
+      <AdBanner />
+      <View style={[styles.container, { paddingBottom: insets.bottom || 10 }]}>
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const label =
@@ -69,6 +72,7 @@ function CustomTabBar({ state, descriptors, navigation }) {
           </TouchableOpacity>
         );
       })}
+      </View>
     </View>
   );
 }
@@ -87,6 +91,9 @@ function AdminLayout() {
 export default AdminLayout;
 
 const styles = StyleSheet.create({
+  tabBarWrapper: {
+    backgroundColor: '#192633',
+  },
   container: {
     flexDirection: 'row',
     justifyContent: 'space-around',

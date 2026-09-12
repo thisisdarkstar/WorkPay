@@ -2,12 +2,15 @@ import { Tabs } from 'expo-router';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AdBanner } from '../../components/ads/AdBanner';
 
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom || 10 }]}>
+    <View style={styles.tabBarWrapper}>
+      <AdBanner />
+      <View style={[styles.container, { paddingBottom: insets.bottom || 10 }]}>
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const label =
@@ -62,11 +65,12 @@ switch (route.name.toLowerCase()) {
               color={isFocused ? '#1e90ff' : '#999'}
             />
             <Text style={{ color: isFocused ? '#1e90ff' : '#999', fontSize: 12 }}>
-              {label.charAt(0).toUpperCase() + label.slice(1)}
+              {typeof label === 'string' && label.length > 0 ? label.charAt(0).toUpperCase() + label.slice(1) : label}
             </Text>
           </TouchableOpacity>
         );
       })}
+      </View>
     </View>
   );
 }
@@ -83,6 +87,9 @@ export default function EmployeeLayout() {
 }
 
 const styles = StyleSheet.create({
+  tabBarWrapper: {
+    backgroundColor: '#192633',
+  },
   container: {
     flexDirection: 'row',
     justifyContent: 'space-around',

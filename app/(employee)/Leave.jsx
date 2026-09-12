@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../constants/EnvValue';
 import { useContextData } from '../../context/EmployeeContext';
-import { getToken } from '../../services/ApiService';
+import { getApiErrorMessage, getToken } from '../../services/ApiService';
 import { formatDay } from "../../utils/TimeUtils";
 
 function Leave() {
@@ -131,15 +131,17 @@ const formatDateForComparison = (date) => {
       return;
     }
 
+    const currentLeaveBal = Number(employeeData?.leaveBalance) || 0;
+
     // Valid leave period
     setLeavePreview({
       error: false,
       totalCalendarDays,
       totalLeaveDays,
       holidaysExcluded: holidaysInRange,
-      leaveBalance: employeeData.leaveBalance,
-      paidDays: Math.min(totalLeaveDays, employeeData.leaveBalance),
-      unpaidDays: Math.max(0, totalLeaveDays - employeeData.leaveBalance),
+      leaveBalance: currentLeaveBal,
+      paidDays: Math.min(totalLeaveDays, currentLeaveBal),
+      unpaidDays: Math.max(0, totalLeaveDays - currentLeaveBal),
       isSingleDay: startDateStr === effectiveEndDate
     });
   };
@@ -147,33 +149,39 @@ const formatDateForComparison = (date) => {
   const fetchHolidays = async () => {
     try {
       setIsLoadingHolidays(true);
+      const token = await getToken();
+      if (!token) return;
       const response = await axios.get(`${url}/api/holidays/getAll`, {
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
       
       // Store raw holidays for validation
       const allHolidays = [];
-      response.data.forEach(monthItem => {
-        monthItem.holidays.forEach(holiday => {
-          allHolidays.push(holiday);
+      if (Array.isArray(response.data)) {
+        response.data.forEach(monthItem => {
+          if (Array.isArray(monthItem?.holidays)) {
+            monthItem.holidays.forEach(holiday => {
+              allHolidays.push(holiday);
+            });
+          }
         });
-      });
+      }
       setRawHolidays(allHolidays);
       
       // Transform the response to match the frontend format
-      const transformedHolidays = response.data.map(monthItem => ({
+      const transformedHolidays = Array.isArray(response.data) ? response.data.map(monthItem => ({
         month: `${monthItem.month} ${currentYear}`,
-        holidays: monthItem.holidays.map(holiday => ({
+        holidays: Array.isArray(monthItem?.holidays) ? monthItem.holidays.map(holiday => ({
           date: new Date(holiday.date).getDate().toString().padStart(2, "0"),
           name: holiday.description
-        }))
-      }));
+        })) : []
+      })) : [];
       
       setHolidaysData(transformedHolidays);
     } catch (error) {
-      showToast(error.response?.data?.error || "Failed to fetch holidays", "Error");
+      showToast(getApiErrorMessage(error, "Failed to fetch holidays"), "Error");
       console.error('Error fetching holidays:', error);
       setHolidaysData([]);
       setRawHolidays([]);
@@ -184,14 +192,16 @@ const formatDateForComparison = (date) => {
 
   const fetchLeavesHistory = async () => {
     try {
+      const token = await getToken();
+      if (!token) return;
       const response = await axios.get(`${url}/api/leaves/employee-leaves?year=${currentYear}`, {
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
-      setLeaveHistory(response.data.leaves);
+      setLeaveHistory(response.data?.leaves || []);
     } catch (error) {
-      showToast(error.response?.data?.error || "Failed to fetch leave history", 'Error');
+      showToast(getApiErrorMessage(error, "Failed to fetch leave history"), 'Error');
       console.error('Error fetching Leaves History:', error);
     }
   };
@@ -238,27 +248,32 @@ const formatDateForComparison = (date) => {
     }
     
     try {
+      const token = await getToken();
+      if (!token) {
+        showToast('Session expired. Please log in again.', 'Error');
+        return;
+      }
       const response = await axios.post(`${url}/api/leaves/apply`, {
         reason: description,
         startDate: startDate,
         endDate: effectiveEndDate
       }, {
         headers: {
-          authorization: `Bearer ${await getToken()}`,
+          authorization: `Bearer ${token}`,
         }
       });
       
-      if (response.data.message) {
+      if (response.data?.message) {
         setStartDate('');
         setEndDate('');
         setDescription('');
         setLeavePreview(null);
         setModalVisible(false);
-        showToast('Leave application submitted successfully', "Success");
+        showToast(response.data.message || 'Leave application submitted successfully', "Success");
         fetchLeavesHistory();
       }
     } catch (error) {
-      showToast(error.response?.data?.error || "Failed to apply leave", "Error");
+      showToast(getApiErrorMessage(error, "Failed to apply leave"), "Error");
       console.error('Error Applying leave:', error);
     }
   };
@@ -298,6 +313,13 @@ const formatDateForComparison = (date) => {
     return startDate && description.trim() && (!leavePreview || !leavePreview.error);
   };
 
+  const availableLeaves = Number(employeeData?.leaveBalance) || 0;
+  const usedLeaves = Array.isArray(leaveHistory)
+    ? leaveHistory.filter((i) => i?.status === "APPROVED" && i?.type === "PAID").reduce((acc, i) => acc + (Number(i?.totalDays) || 0), 0)
+    : 0;
+  const totalLeaves = availableLeaves + usedLeaves;
+  const usedPercent = totalLeaves > 0 ? Math.min(100, Math.round((usedLeaves / totalLeaves) * 100)) : 0;
+
   return (
     <SafeAreaView style={styles.mainContainer}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -316,25 +338,25 @@ const formatDateForComparison = (date) => {
           <View style={styles.summaryContent}>
             <View style={styles.summaryStats}>
               <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{employeeData.leaveBalance + leaveHistory.filter((i)=>i.status === "APPROVED" && i.type === "PAID").reduce((acc,i)=>acc+i.totalDays,0)}</Text>
+                <Text style={styles.statNumber}>{totalLeaves}</Text>
                 <Text style={styles.statLabel}>Total</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{leaveHistory.filter((i)=>i.status === "APPROVED" && i.type === "PAID").reduce((acc,i)=>acc+i.totalDays,0)}</Text>
+                <Text style={styles.statNumber}>{usedLeaves}</Text>
                 <Text style={styles.statLabel}>Used</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{employeeData.leaveBalance}</Text>
+                <Text style={styles.statNumber}>{availableLeaves}</Text>
                 <Text style={styles.statLabel}>Available</Text>
               </View>
             </View>
             <View style={styles.progressBarContainer}>
               <View style={styles.progressBarBg}>
-                <View style={[styles.progressBarFill, { width: `${((leaveHistory.filter((i)=>i.status === "APPROVED" && i.type === "PAID").reduce((acc,i)=>acc+i.totalDays,0))/(employeeData.leaveBalance + leaveHistory.filter((i)=>i.status === "APPROVED" && i.type === "PAID").reduce((acc,i)=>acc+i.totalDays,0)))*100}%` }]} />
+                <View style={[styles.progressBarFill, { width: `${usedPercent}%` }]} />
               </View>
-              <Text style={styles.progressText}>{Math.round(((leaveHistory.filter((i)=>i.status === "APPROVED" && i.type === "PAID").reduce((acc,i)=>acc+i.totalDays,0))/(employeeData.leaveBalance + leaveHistory.filter((i)=>i.status === "APPROVED" && i.type === "PAID").reduce((acc,i)=>acc+i.totalDays,0)))*100) || 0}% used</Text>
+              <Text style={styles.progressText}>{usedPercent}% used</Text>
             </View>
           </View>
         </View>

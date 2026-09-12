@@ -6,7 +6,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
-import { getToken } from '../../../services/ApiService';
+import { getApiErrorMessage, getToken } from '../../../services/ApiService';
 import { formatDay } from "../../../utils/TimeUtils";
 
 
@@ -17,56 +17,58 @@ function LeaveRequests() {
   const {showToast} = useContextData();
   const {id} = useLocalSearchParams();
 
-  const fetchLeaveRequest = async ()=>{
-    try{
-         let apiUrl = id ? `${url}/api/leaves/summary/${id}` : `${url}/api/leaves/summary`;
-       const response = await axios.get(apiUrl, {
+  const fetchLeaveRequest = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      let apiUrl = id ? `${url}/api/leaves/summary/${id}` : `${url}/api/leaves/summary`;
+      const response = await axios.get(apiUrl, {
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
-      const data = response.data;
-      setData(data);
-      console.log(data.office)
-    }catch(error){
-      showToast(error.response.data.error,'Error');
-      console.error("Error fetching leaves request",error)
+      setData(response.data);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, 'Error fetching leave requests'), 'Error');
+      console.error("Error fetching leaves request", error);
     }
   }
 
-    const handleAcceptReject = async (id,type)=>{
-    try{
-       const response = await axios.post(`${url}/api/leaves/update-status`,
+  const handleAcceptReject = async (leaveId, type) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const response = await axios.post(`${url}/api/leaves/update-status`,
         {
-          leaveId:id,
-          status:type
+          leaveId,
+          status: type
         }, {
         headers: {
-          authorization: `Bearer ${await getToken()}`
+          authorization: `Bearer ${token}`
         }
       });
-      const data = response.data;
-      if(data.message){
-        showToast(data.message,"Success")
+      const resData = response.data;
+      if (resData?.message) {
+        showToast(resData.message, "Success");
         fetchLeaveRequest();
       }
-    }catch(error){
-       showToast(error.response.data.error,"Error")
-      console.error("Error fetching leaves request",error)
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Failed to update leave status"), "Error");
+      console.error("Error updating leave status", error);
     }
   }
 
 
-useEffect(()=>{
-  fetchLeaveRequest();
-},[])
+  useEffect(() => {
+    fetchLeaveRequest();
+  }, [id]);
 
 
 
   const tabs = [
-    { key: 'pendingLeaves', label: 'Pending Leaves', count: data?.pendingLeaves?.length },
-    { key: 'approvedLeaves', label: 'Approved Leaves', count: data?.approvedLeaves?.length },
-    { key: 'rejectedLeaves', label: 'Rejected Leaves', count: data?.rejectedLeaves?.length },
+    { key: 'pendingLeaves', label: 'Pending Leaves', count: data?.pendingLeaves?.length || 0 },
+    { key: 'approvedLeaves', label: 'Approved Leaves', count: data?.approvedLeaves?.length || 0 },
+    { key: 'rejectedLeaves', label: 'Rejected Leaves', count: data?.rejectedLeaves?.length || 0 },
   ];
 
   const getStatusColor = (status) => {
@@ -125,13 +127,13 @@ useEffect(()=>{
       {/* Content */}
       <ScrollView style={styles.content}>
         <View style={styles.requestsContainer}>
-         {data?.[activeTab]?.length > 0 ? data?.[activeTab]?.map((request, index) => (
-            <View key={request.id} style={styles.requestItem}>
+         {Array.isArray(data?.[activeTab]) && data[activeTab].length > 0 ? data[activeTab].map((request, index) => (
+            <View key={request?.id || index} style={styles.requestItem}>
               <View style={styles.requestInfo}>
-                <Text style={styles.requestName}>{request?.employee.name}</Text>
-                <Text style={styles.requestType}>{request?.type}</Text>
-                <Text style={styles.requestDates}>{formatDay(request?.fromDate) }- { formatDay(request.toDate)}</Text>
-                <Text style={styles.requestReason}>{request.reason}</Text>
+                <Text style={styles.requestName}>{request?.employee?.name || "Employee"}</Text>
+                <Text style={styles.requestType}>{request?.type || "LEAVE"}</Text>
+                <Text style={styles.requestDates}>{formatDay(request?.fromDate)} - {formatDay(request?.toDate)}</Text>
+                <Text style={styles.requestReason}>{request?.reason || "No reason provided"}</Text>
               </View>
               
               <View style={styles.requestActions}>

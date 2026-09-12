@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from "../../../context/EmployeeContext";
 import { useOfficeContextData } from "../../../context/OfficeContext";
-import { getToken } from '../../../services/ApiService';
+import { getApiErrorMessage, getToken } from '../../../services/ApiService';
 
 function OfficeSettings() {
   const [formData, setFormData] = useState({
@@ -50,10 +50,11 @@ function OfficeSettings() {
       //   latitude: data.latitude || null,
       //   longitude: data.longitude || null
       // });
-      setOfficeList(data.offices);
-      setOfficeData(data.offices)
+      const offices = Array.isArray(data?.offices) ? data.offices : [];
+      setOfficeList(offices);
+      setOfficeData(offices);
     } catch (error) {
-      showToast(error.response.data.error,"Error")
+      showToast(getApiErrorMessage(error, "Error fetching office details"), "Error");
       console.error('Error fetching office details:', error);
     }
   }
@@ -154,8 +155,8 @@ const addOffice = async () => {
         fetchOfficeDetails();
       }
   }catch (error) {
-    console.error('Error adding office:', error.response.data.error);
-    showToast('Failed to add office', 'Error');
+    console.error('Error adding office:', error);
+    showToast(getApiErrorMessage(error, 'Failed to add office'), 'Error');
   }finally {
     setIsLoading(false);
   }
@@ -233,7 +234,7 @@ const updateOfficeSettings = async () => {
     }
   } catch (error) {
     console.error('Error updating office settings:', error);
-    showToast('Failed to update office settings', 'Error');
+    showToast(getApiErrorMessage(error, 'Failed to update office settings'), 'Error');
   } finally {
     setIsLoading(false);
   }
@@ -252,7 +253,7 @@ const deleteOffice = async (officeId) => {
     }
   } catch (error) {
     console.error('Error deleting office:', error);
-    showToast(error.response.data.error, 'Error');
+    showToast(getApiErrorMessage(error, 'Failed to delete office'), 'Error');
   } 
 };
 
@@ -264,7 +265,7 @@ const deleteOffice = async (officeId) => {
       // Request location permissions
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Show('Permission to access location was denied', 'Warning');
+        showToast('Permission to access location was denied', 'Warning');
         return;
       }
 
@@ -279,8 +280,8 @@ const deleteOffice = async (officeId) => {
       
       showToast( 'Current location captured successfully!','Success');
     } catch (error) {
-      console.error('Error getting location:', error.response.data.error);
-      showToast('Failed to get current location','Error');
+      console.error('Error getting location:', error);
+      showToast('Failed to get current location. Please check GPS & permissions.','Error');
     } finally {
       setIsLoading(false);
     }
@@ -299,7 +300,11 @@ const deleteOffice = async (officeId) => {
 
   const handleTimeChange = (event, selectedTime, type) => {
     if (event.type === 'dismissed') {
-      type === 'start' ? setShowStart(false) : setShowEnd(false);
+      if (type === 'start') {
+        setShowStart(false);
+      } else {
+        setShowEnd(false);
+      }
       return;
     }
     const currentTime = selectedTime || new Date();
@@ -415,7 +420,7 @@ const deleteOffice = async (officeId) => {
               }}
             >
               <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>{office.name || `Office ${index + 1}`}</Text>
-              <Text style={{ color: '#8f9eb3' }}>Coordinates: Lat {office.latitude.toFixed(6)}, Lng {office.longitude.toFixed(6)}</Text>
+              <Text style={{ color: '#8f9eb3' }}>Coordinates: Lat {Number(office.latitude || 0).toFixed(6)}, Lng {Number(office.longitude || 0).toFixed(6)}</Text>
               <Text style={{ color: '#8f9eb3' }}>
                 Timings: {office.checkin ? new Date(office.checkin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'} - {office.checkout ? new Date(office.checkout).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
               </Text>
