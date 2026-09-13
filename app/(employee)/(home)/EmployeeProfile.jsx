@@ -4,6 +4,8 @@ import axios from "axios";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { url } from "../../../constants/EnvValue";
 import { useContextData } from "../../../context/EmployeeContext";
@@ -289,7 +291,10 @@ function Profile() {
               </View>
             </View>
           ) : (
-            <View style={styles.passwordForm}>
+            <Animated.View 
+              entering={FadeInDown.duration(280).springify()}
+              style={styles.passwordForm}
+            >
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Account Number</Text>
                 <View style={styles.inputWrapper}>
@@ -335,7 +340,7 @@ function Profile() {
                   <Text style={styles.updateButtonText}>Update</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
           )}
         </View>
 
@@ -366,7 +371,10 @@ function Profile() {
               </View>
             </View>
           ) : (
-            <View style={styles.passwordForm}>
+            <Animated.View 
+              entering={FadeInDown.duration(280).springify()}
+              style={styles.passwordForm}
+            >
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Current Password</Text>
                 <View style={styles.inputWrapper}>
@@ -454,7 +462,7 @@ function Profile() {
                   <Text style={styles.updateButtonText}>Update</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
           )}
         </View>
 

@@ -25,6 +25,8 @@ function Dashboard() {
   const [showOfficeList,setShowOfficeList] = useState(false);
   const [isEmployeesAvailable,setIsEmployeesAvailable] = useState(false);
 
+  const [autoFinalizeDisplay, setAutoFinalizeDisplay] = useState(null);
+
   // Modified dashboardDetails to accept officeId parameter
   const dashboardDetails = async (officeId) => {
     try {
@@ -73,7 +75,10 @@ function Dashboard() {
   }
 
   const checkAttendanceFinalization = async (officeId) => {
-    if (!officeId || officeId === 'all') return;
+    if (!officeId || officeId === 'all') {
+      setAutoFinalizeDisplay(null);
+      return;
+    }
     try {
       const token = await getToken();
       if (!token) return;
@@ -86,6 +91,7 @@ function Dashboard() {
       });
       setIsAttendanceFinalized(!!response.data?.isBulkMarkingCompleted);
       setIsEmployeesAvailable((response.data?.totalEmployees || 0) > 0);
+      setAutoFinalizeDisplay(response.data?.autoFinalizeDisplay || null);
     } catch (error) {
       console.error('Error checking attendance finalization:', error);
     }
@@ -98,6 +104,9 @@ function Dashboard() {
     dashboardDetails(officeId); // Immediately fetch data for selected office
     if (officeId !== "all") {
       checkAttendanceFinalization(officeId);
+    } else {
+      setAutoFinalizeDisplay(null);
+      setIsAttendanceFinalized(false);
     }
   }
 
@@ -147,34 +156,53 @@ function Dashboard() {
         <View style={styles.sectionContainer}>
 
           {/* office selector */}
-          <View style={{marginBottom:20,width:'100%',gap:10}}>
-                <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderWidth:1,borderColor:'#2A3441',padding:10,borderRadius:8}}>
-                    <Text style={{color:'#FFFFFF',fontSize:18}}>{currentOffice !== "all" ? data?.offices?.find(office => office.id === currentOffice)?.name : "All"}</Text>
-                    <TouchableOpacity onPress={() => setShowOfficeList(!showOfficeList)}>
-                      <AntDesign name={showOfficeList ? "up" : "down"} size={20} color="#4A9EFF" />
-                    </TouchableOpacity>
-                </View>
+          <View style={{marginBottom:16,width:'100%',gap:8}}>
+                <TouchableOpacity 
+                  activeOpacity={0.7}
+                  onPress={() => setShowOfficeList(!showOfficeList)}
+                  style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderWidth:1,borderColor:'#2A3441',padding:12,borderRadius:10,backgroundColor:'#192633'}}
+                >
+                    <View style={{flexDirection:'row',alignItems:'center',gap:10}}>
+                      <MaterialIcons name="business" size={22} color="#4A9EFF" />
+                      <Text style={{color:'#FFFFFF',fontSize:17,fontWeight:'600'}}>
+                        {currentOffice !== "all" ? data?.offices?.find(office => office.id === currentOffice)?.name : "All Branches"}
+                      </Text>
+                    </View>
+                    <AntDesign name={showOfficeList ? "up" : "down"} size={18} color="#4A9EFF" />
+                </TouchableOpacity>
 
                 {
-                  showOfficeList && <View>
+                  showOfficeList && <View style={{backgroundColor:'#192633',borderRadius:10,borderWidth:1,borderColor:'#2A3441',overflow:'hidden',padding:4}}>
                     <TouchableOpacity 
                         onPress={() => handleOfficeSelect('all')}
-                        style={{padding:10,backgroundColor: 'all' === currentOffice ? '#4A9EFF' : '#192633',borderRadius:8,marginTop:5}}
+                        style={{padding:12,backgroundColor: 'all' === currentOffice ? '#4A9EFF' : 'transparent',borderRadius:8,flexDirection:'row',alignItems:'center',gap:8}}
                       > 
-                        <Text style={{color:'#FFFFFF',fontSize:16}}>All</Text>
+                        <MaterialIcons name="apps" size={18} color="#FFFFFF" />
+                        <Text style={{color:'#FFFFFF',fontSize:15,fontWeight:'600'}}>All Branches</Text>
                       </TouchableOpacity>
                     {data?.offices?.map((office)=>(
                       <TouchableOpacity 
                         key={office.id}
                         onPress={() => handleOfficeSelect(office.id)}
-                        style={{padding:10,backgroundColor: office.id === currentOffice ? '#4A9EFF' : '#192633',borderRadius:8,marginTop:5}}
+                        style={{padding:12,backgroundColor: office.id === currentOffice ? '#4A9EFF' : 'transparent',borderRadius:8,flexDirection:'row',alignItems:'center',gap:8,marginTop:2}}
                       > 
-                        <Text style={{color:'#FFFFFF',fontSize:16}}>{office.name}</Text>
+                        <MaterialIcons name="location-city" size={18} color={office.id === currentOffice ? "#FFFFFF" : "#8A9BAE"} />
+                        <Text style={{color:'#FFFFFF',fontSize:15,fontWeight:'500'}}>{office.name}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
                 }
           </View>
+
+          {/* Auto-finalize safety info row */}
+          {currentOffice !== "all" && autoFinalizeDisplay && (
+            <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:16,backgroundColor:'#1A2E3B',paddingHorizontal:12,paddingVertical:8,borderRadius:8,borderWidth:1,borderColor:'rgba(74, 158, 255, 0.2)'}}>
+              <Feather name="clock" size={14} color="#60A5FA" />
+              <Text style={{color:'#94A3B8',fontSize:12,flex:1}}>
+                Auto-finalize: <Text style={{color:'#60A5FA',fontWeight:'600'}}>{autoFinalizeDisplay}</Text>
+              </Text>
+            </View>
+          )}
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Overview</Text>
@@ -191,10 +219,25 @@ function Dashboard() {
                 }
               }} 
               disabled={loading}
-              style={[styles.viewAllButton,{backgroundColor:'#4A9EFF'}]}
+              style={[
+                styles.viewAllButton,
+                {
+                  backgroundColor: isAttendanceFinalized ? '#10B98120' : '#4A9EFF',
+                  borderWidth: isAttendanceFinalized ? 1 : 0,
+                  borderColor: '#10B98150',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6
+                }
+              ]}
             >
               {loading ? (
                 <ActivityIndicator size="small" color="#fff" />
+              ) : isAttendanceFinalized ? (
+                <>
+                  <Feather name="check" size={14} color="#10B981" />
+                  <Text style={[styles.viewAllText,{color:'#10B981'}]}>Finalized</Text>
+                </>
               ) : (
                 <Text style={[styles.viewAllText,{color:'#fff'}]}>Finalize Attendance</Text>
               )}
@@ -205,7 +248,7 @@ function Dashboard() {
              currentOffice === "all" ? ( stat.field !== "totalLate" &&  <TouchableOpacity
                onPress={() =>{
                 if(stat.field !== "totalEmployees")
-                router.push({ pathname: '/AttendanceStatus', params: { id: currentOffice,status: stat.status,officeName:data?.offices?.find(office => office?.id === currentOffice)?.name} })
+                router.push({ pathname: '/AttendanceStatus', params: { id: currentOffice, status: stat.status, officeName: currentOffice === 'all' ? 'All Branches' : (data?.offices?.find(office => office?.id === currentOffice)?.name || 'Office') } })
                }
               }
               key={index} style={styles.card}>
@@ -227,7 +270,7 @@ function Dashboard() {
                  <TouchableOpacity
                   onPress={() =>{
                     if(stat.field !== "totalEmployees")
-                    router.push({ pathname: '/AttendanceStatus', params: { id: currentOffice,status: stat.status,officeName:data?.offices?.find(office => office?.id === currentOffice)?.name} })
+                    router.push({ pathname: '/AttendanceStatus', params: { id: currentOffice, status: stat.status, officeName: data?.offices?.find(office => office?.id === currentOffice)?.name || 'Office' } })
                   }
                   }
                   key={index} style={styles.card}>

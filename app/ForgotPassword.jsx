@@ -1,272 +1,100 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
 import {
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
 
 function ForgotPassword() {
-  const [step, setStep] = useState(1); // 1: Enter details, 2: Verify OTP, 3: Reset password
   const params = useLocalSearchParams();
   const isEmployee = params.isEmployee === 'true' || params.isEmployee === true; // Handle string/boolean
-  const [contactInfo, setContactInfo] = useState('');
-  const [otp, setOtp] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const handleSendOTP = () => {
-    if (!contactInfo.trim()) {
-      Alert.alert('Error', `Please enter your ${isEmployee ? 'phone number' : 'email address'}`);
-      return;
-    }
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false);
-      setStep(2);
-    }, 1500);
-  };
+  const renderContent = () => {
+    if (isEmployee) {
+      return (
+        <>
+          <View style={styles.stepHeader}>
+            <MaterialCommunityIcons name="shield-key-outline" size={64} color="#4da6ff" />
+            <Text style={styles.stepTitle}>Forgot Password?</Text>
+            <Text style={styles.stepSubtitle}>
+              For security, employee passwords are reset directly by your company administrator.
+            </Text>
+          </View>
 
-  const handleVerifyOTP = () => {
-    if (!otp.trim() || otp.length !== 6) {
-      Alert.alert('Error', 'Please enter a valid 6-digit OTP');
-      return;
-    }
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false);
-      setStep(3);
-    }, 1500);
-  };
+          <View style={styles.userTypeIndicator}>
+            <MaterialCommunityIcons name="account" size={24} color="#4da6ff" />
+            <Text style={styles.userTypeText}>Employee Password Recovery</Text>
+          </View>
 
-  const handleResetPassword = () => {
-    if (!newPassword.trim() || newPassword.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters long');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false);
-      Alert.alert('Success', 'Password reset successfully!', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
-    }, 1500);
-  };
-
-  const renderStepContent = () => {
-    switch (step) {
-      case 1:
-        return (
-          <>
-            <View style={styles.stepHeader}>
-              <MaterialCommunityIcons name="lock-reset" size={60} color="#4da6ff" />
-              <Text style={styles.stepTitle}>Forgot Password?</Text>
-              <Text style={styles.stepSubtitle}>
-                {"Don't worry! Enter your "} {isEmployee ? 'phone number' : 'email address'} {" and we'll send you a verification code."}
-              </Text>
-            </View>
-
-            <View style={styles.userTypeIndicator}>
-              <MaterialCommunityIcons 
-                name={isEmployee ? "account" : "shield-account"} 
-                size={24} 
-                color="#4da6ff" 
-              />
-              <Text style={styles.userTypeText}>
-                {isEmployee ? 'Employee' : 'Admin'} Password Recovery
-              </Text>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>
-                {isEmployee ? 'Phone Number' : 'Email Address'}
-              </Text>
-              <View style={styles.inputContainer}>
-                <MaterialCommunityIcons 
-                  name={isEmployee ? "phone" : "email"} 
-                  size={20} 
-                  color="#666" 
-                  style={styles.inputIcon} 
-                />
-                <TextInput
-                  value={contactInfo}
-                  onChangeText={setContactInfo}
-                  style={styles.input}
-                  placeholder={isEmployee ? 'Enter your phone number' : 'Enter your email address'}
-                  placeholderTextColor="#666"
-                  keyboardType={isEmployee ? "phone-pad" : "email-address"}
-                  autoCapitalize="none"
-                />
+          <View style={styles.instructionCard}>
+            <Text style={styles.instructionTitle}>How to recover your account:</Text>
+            
+            <View style={styles.instructionRow}>
+              <View style={styles.stepNumberBadge}>
+                <Text style={styles.stepNumberText}>1</Text>
               </View>
+              <Text style={styles.instructionText}>
+                Contact your Company Administrator / Employer.
+              </Text>
             </View>
 
-            <TouchableOpacity
-              onPress={handleSendOTP}
-              style={[styles.actionButton, isLoading && styles.disabledButton]}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <MaterialCommunityIcons name="loading" size={20} color="#fff" />
-              ) : (
-                <MaterialCommunityIcons name="send" size={20} color="#fff" />
-              )}
-              <Text style={styles.buttonText}>
-                {isLoading ? 'Sending...' : 'Send Verification Code'}
-              </Text>
-            </TouchableOpacity>
-          </>
-        );
-
-      case 2:
-        return (
-          <>
-            <View style={styles.stepHeader}>
-              <MaterialCommunityIcons name="message-text" size={60} color="#4da6ff" />
-              <Text style={styles.stepTitle}>Verify Code</Text>
-              <Text style={styles.stepSubtitle}>
-                {"We've sent a 6-digit verification code to your "} {isEmployee ? 'phone' : 'email'}
-              </Text>
-              <Text style={styles.contactDisplay}>{contactInfo}</Text>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Verification Code</Text>
-              <View style={styles.inputContainer}>
-                <MaterialCommunityIcons name="security" size={20} color="#666" style={styles.inputIcon} />
-                <TextInput
-                  value={otp}
-                  onChangeText={setOtp}
-                  style={styles.input}
-                  placeholder="Enter 6-digit code"
-                  placeholderTextColor="#666"
-                  keyboardType="numeric"
-                  maxLength={6}
-                />
+            <View style={styles.instructionRow}>
+              <View style={styles.stepNumberBadge}>
+                <Text style={styles.stepNumberText}>2</Text>
               </View>
-            </View>
-
-            <TouchableOpacity
-              onPress={handleVerifyOTP}
-              style={[styles.actionButton, isLoading && styles.disabledButton]}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <MaterialCommunityIcons name="loading" size={20} color="#fff" />
-              ) : (
-                <MaterialCommunityIcons name="check-circle" size={20} color="#fff" />
-              )}
-              <Text style={styles.buttonText}>
-                {isLoading ? 'Verifying...' : 'Verify Code'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.resendButton}>
-              <Text style={styles.resendText}>{"Didn't receive code? Resend"}</Text>
-            </TouchableOpacity>
-          </>
-        );
-
-      case 3:
-        return (
-          <>
-            <View style={styles.stepHeader}>
-              <MaterialCommunityIcons name="key-variant" size={60} color="#4da6ff" />
-              <Text style={styles.stepTitle}>Reset Password</Text>
-              <Text style={styles.stepSubtitle}>
-                Create a new secure password for your account
+              <Text style={styles.instructionText}>
+                Your Admin will generate a secure temporary password for your account from the Admin Portal.
               </Text>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>New Password</Text>
-              <View style={styles.inputContainer}>
-                <MaterialCommunityIcons name="lock" size={20} color="#666" style={styles.inputIcon} />
-                <TextInput
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  style={styles.input}
-                  placeholder="Enter new password"
-                  placeholderTextColor="#666"
-                  secureTextEntry={!showPassword}
-                />
-                <TouchableOpacity 
-                  onPress={() => setShowPassword(!showPassword)}
-                  style={styles.eyeIcon}
-                >
-                  <MaterialCommunityIcons 
-                    name={showPassword ? "eye-off" : "eye"} 
-                    size={20} 
-                    color="#666" 
-                  />
-                </TouchableOpacity>
+            <View style={styles.instructionRow}>
+              <View style={styles.stepNumberBadge}>
+                <Text style={styles.stepNumberText}>3</Text>
               </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Confirm Password</Text>
-              <View style={styles.inputContainer}>
-                <MaterialCommunityIcons name="lock-check" size={20} color="#666" style={styles.inputIcon} />
-                <TextInput
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  style={styles.input}
-                  placeholder="Confirm new password"
-                  placeholderTextColor="#666"
-                  secureTextEntry={!showConfirmPassword}
-                />
-                <TouchableOpacity 
-                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  style={styles.eyeIcon}
-                >
-                  <MaterialCommunityIcons 
-                    name={showConfirmPassword ? "eye-off" : "eye"} 
-                    size={20} 
-                    color="#666" 
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              onPress={handleResetPassword}
-              style={[styles.actionButton, isLoading && styles.disabledButton]}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <MaterialCommunityIcons name="loading" size={20} color="#fff" />
-              ) : (
-                <MaterialCommunityIcons name="check-bold" size={20} color="#fff" />
-              )}
-              <Text style={styles.buttonText}>
-                {isLoading ? 'Resetting...' : 'Reset Password'}
+              <Text style={styles.instructionText}>
+                Log in using that temporary password. You can change it anytime from your Profile screen.
               </Text>
-            </TouchableOpacity>
-          </>
-        );
+            </View>
+          </View>
 
-      default:
-        return null;
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[styles.actionButton, { marginTop: 24 }]}
+          >
+            <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
+            <Text style={styles.buttonText}>Back to Login</Text>
+          </TouchableOpacity>
+        </>
+      );
     }
+
+    return (
+      <>
+        <View style={styles.stepHeader}>
+          <MaterialCommunityIcons name="shield-account" size={60} color="#4da6ff" />
+          <Text style={styles.stepTitle}>Admin Password Help</Text>
+          <Text style={styles.stepSubtitle}>
+            Please contact technical support or your super administrator to reset your organization credentials.
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.actionButton, { marginTop: 24 }]}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
+          <Text style={styles.buttonText}>Back to Login</Text>
+        </TouchableOpacity>
+      </>
+    );
   };
 
   return (
@@ -288,7 +116,7 @@ function ForgotPassword() {
           <View style={styles.header}>
             <TouchableOpacity 
               style={styles.backButton}
-              onPress={() => step > 1 ? setStep(step - 1) : router.back()}
+              onPress={() => router.back()}
             >
               <MaterialCommunityIcons name="arrow-left" size={24} color="#4da6ff" />
             </TouchableOpacity>
@@ -296,60 +124,14 @@ function ForgotPassword() {
             <View style={styles.placeholder} />
           </View>
 
-          {/* Progress indicator */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressStep}>
-              <View style={[
-                styles.progressDot, 
-                step >= 1 && styles.activeProgressDot
-              ]}>
-                {step > 1 ? (
-                  <MaterialCommunityIcons name="check" size={12} color="#fff" />
-                ) : (
-                  <Text style={[styles.progressNumber, step >= 1 && styles.activeProgressNumber]}>
-                    1
-                  </Text>
-                )}
-              </View>
-              <View style={[styles.progressLine, step > 1 && styles.activeProgressLine]} />
-            </View>
-            
-            <View style={styles.progressStep}>
-              <View style={[
-                styles.progressDot, 
-                step >= 2 && styles.activeProgressDot
-              ]}>
-                {step > 2 ? (
-                  <MaterialCommunityIcons name="check" size={12} color="#fff" />
-                ) : (
-                  <Text style={[styles.progressNumber, step >= 2 && styles.activeProgressNumber]}>
-                    2
-                  </Text>
-                )}
-              </View>
-              <View style={[styles.progressLine, step > 2 && styles.activeProgressLine]} />
-            </View>
-            
-            <View style={styles.progressStep}>
-              <View style={[
-                styles.progressDot, 
-                step >= 3 && styles.activeProgressDot
-              ]}>
-                <Text style={[styles.progressNumber, step >= 3 && styles.activeProgressNumber]}>
-                  3
-                </Text>
-              </View>
-            </View>
-          </View>
-
           {/* Main Card */}
           <View style={styles.mainCard}>
-            {renderStepContent()}
+            {renderContent()}
           </View>
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Need help? Contact support</Text>
+            <Text style={styles.footerText}>WorkPay Security & Access Control</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -580,5 +362,45 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 14,
     fontWeight: '500',
+  },
+  instructionCard: {
+    backgroundColor: '#192633',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2A3B4D',
+    padding: 18,
+    marginVertical: 12,
+  },
+  instructionTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  instructionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+    gap: 12,
+  },
+  stepNumberBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#4da6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  stepNumberText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  instructionText: {
+    flex: 1,
+    color: '#BDC8D4',
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

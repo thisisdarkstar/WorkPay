@@ -9,7 +9,9 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  Platform,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
@@ -18,6 +20,7 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from "../../../context/EmployeeContext";
 import { useOfficeContextData } from '../../../context/OfficeContext';
@@ -37,6 +40,14 @@ function EmployeeManagement() {
   const {officeData} = useOfficeContextData();
   const [showOfficeList, setShowOfficeList] = useState(false);
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'ACTIVE', 'INACTIVE'
+
+  // Reset password states
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [employeeToReset, setEmployeeToReset] = useState(null);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [tempPasswordModalVisible, setTempPasswordModalVisible] = useState(false);
+  const [generatedPasswordData, setGeneratedPasswordData] = useState(null);
+  const [passwordCopied, setPasswordCopied] = useState(false);
   
   // Date picker states
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -170,6 +181,84 @@ function EmployeeManagement() {
   const cancelStatusUpdate = () => {
     setStatusModalVisible(false);
     setEmployeeToStatusUpdate(null);
+  };
+
+  const showResetPasswordConfirmation = (employee) => {
+    setEmployeeToReset(employee);
+    setResetModalVisible(true);
+  };
+
+  const cancelResetPassword = () => {
+    if (isResettingPassword) return;
+    setResetModalVisible(false);
+    setEmployeeToReset(null);
+  };
+
+  const confirmResetPassword = async () => {
+    if (!employeeToReset) return;
+    setIsResettingPassword(true);
+    try {
+      const token = await getToken();
+      if (!token) {
+        showToast("Session expired. Please login again.", "Error");
+        setIsResettingPassword(false);
+        return;
+      }
+      const response = await axios.post(
+        `${url}/api/employees/admin-reset-password/${employeeToReset.id}`,
+        {},
+        {
+          headers: {
+            authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const { temporaryPassword, employee, message } = response.data;
+      setResetModalVisible(false);
+      setGeneratedPasswordData({
+        temporaryPassword,
+        employee: employee || employeeToReset
+      });
+      setTempPasswordModalVisible(true);
+      showToast(message || "Password reset successfully", "Success");
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Failed to reset password"), "Error");
+      console.error('Error resetting password:', error);
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
+  const handleCopyPassword = async () => {
+    if (!generatedPasswordData?.temporaryPassword) return;
+    try {
+      if (Clipboard && typeof Clipboard.setStringAsync === 'function') {
+        await Clipboard.setStringAsync(generatedPasswordData.temporaryPassword);
+      }
+      setPasswordCopied(true);
+      showToast("Password copied to clipboard!", "Success");
+    } catch (error) {
+      console.warn("Clipboard copy notice:", error);
+      setPasswordCopied(true);
+      showToast("Password copied to clipboard!", "Success");
+    } finally {
+      setTimeout(() => {
+        setPasswordCopied(false);
+      }, 2500);
+    }
+  };
+
+  const handleSharePassword = async () => {
+    if (!generatedPasswordData?.temporaryPassword) return;
+    try {
+      await Share.share({
+        message: `Hello ${generatedPasswordData.employee?.name || "Employee"},\nYour temporary password for WorkPay is: ${generatedPasswordData.temporaryPassword}\n\nPlease use this to log in to the WorkPay app. You can change your password anytime from your Profile screen.`
+      });
+    } catch (error) {
+      console.error("Error sharing password:", error);
+    }
   };
 
   const handleEmployeeAddandEdit = (type) => {
@@ -322,7 +411,7 @@ function EmployeeManagement() {
             <Text style={styles.employeeName}>{item?.name || 'Employee'}</Text>
             <Text style={styles.employeePhone}>{item?.phone || ''}</Text>
           </View>
-        {statusFilter ===  "ALL" &&  <View style={{marginLeft: 'auto',borderRadius: 4,backgroundColor: item?.status === 'ACTIVE' ? '#4CAF50' : '#F44336',paddingHorizontal: 8,paddingVertical: 2,alignSelf: 'flex-start',}}>
+        {statusFilter ===  "ALL" &&  <View style={{marginLeft: 'auto',borderRadius: 4,backgroundColor: item?.status === 'ACTIVE' ? '#4CAF50' : '#F97316',paddingHorizontal: 8,paddingVertical: 2,alignSelf: 'flex-start',}}>
                 <Text style={[styles.employeeRole,{color:"#ffffff",fontWeight:"bold"}]}>{item?.status || 'UNKNOWN'}</Text>
           </View>}
         </View>
@@ -342,28 +431,40 @@ function EmployeeManagement() {
              params: { id: item.id } 
            })}
         >
-          <Feather name="eye" size={16} color="#4A90E2" />
-          <Text style={[styles.actionText, { color: '#4A90E2' }]}>View</Text>
+          <Feather name="eye" size={13} color="#4A90E2" />
+          <Text numberOfLines={1} style={[styles.actionText, { color: '#4A90E2' }]}>View</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
           style={[styles.actionButton, styles.editButton]} 
           onPress={() => openEditModal(item)}
         >
-          <Feather name="edit-2" size={16} color="#F5A623" />
-          <Text style={[styles.actionText, { color: '#F5A623' }]}>Edit</Text>
+          <Feather name="edit-2" size={13} color="#F5A623" />
+          <Text numberOfLines={1} style={[styles.actionText, { color: '#F5A623' }]}>Edit</Text>
         </TouchableOpacity>
 
-          {/* Active Inactive button */}
-          <TouchableOpacity
-            style={[styles.actionButton, item.status === 'ACTIVE' ? styles.deleteButton : {backgroundColor: '#4CAF5015'}]}
-            onPress={() => showStatusUpdateConfirmation(item)}
-          >
-            <Feather name={item.status === 'ACTIVE' ? "pause" : "play"} size={16} color={item.status === 'ACTIVE' ? "#D0021B" : "#4CAF50"} />
-            <Text style={[styles.actionText, { color: item.status === 'ACTIVE' ? '#D0021B' : '#4CAF50' }]}>
-              {item.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-            </Text>
-          </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.resetButton]} 
+          onPress={() => showResetPasswordConfirmation(item)}
+        >
+          <Feather name="key" size={13} color="#BA68C8" />
+          <Text numberOfLines={1} style={[styles.actionText, { color: '#BA68C8' }]}>Reset</Text>
+        </TouchableOpacity>
+
+        {/* Active / Inactive button */}
+        <TouchableOpacity
+          style={[styles.actionButton, item.status === 'ACTIVE' ? styles.deactivateButton : styles.activateButton]}
+          onPress={() => showStatusUpdateConfirmation(item)}
+        >
+          <Feather 
+            name={item.status === 'ACTIVE' ? "pause-circle" : "play-circle"} 
+            size={13} 
+            color={item.status === 'ACTIVE' ? "#FB923C" : "#4CAF50"} 
+          />
+          <Text numberOfLines={1} style={[styles.actionText, { color: item.status === 'ACTIVE' ? '#FB923C' : '#4CAF50' }]}>
+            {item.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+          </Text>
+        </TouchableOpacity>
 
       </View>
     </View>
@@ -425,7 +526,7 @@ function EmployeeManagement() {
           style={[styles.filterButton, statusFilter === 'INACTIVE' && styles.filterButtonActive]}
           onPress={() => setStatusFilter('INACTIVE')}
         >
-          <View style={[styles.statusDot, { backgroundColor: '#F44336' }]} />
+          <View style={[styles.statusDot, { backgroundColor: '#F97316' }]} />
           <Text style={[styles.filterButtonText, statusFilter === 'INACTIVE' && styles.filterButtonTextActive]}>
             Inactive ({employees.filter(e => e.status === 'INACTIVE').length})
           </Text>
@@ -636,22 +737,35 @@ function EmployeeManagement() {
         <View style={styles.deleteModalOverlay}>
           <View style={styles.deleteModalContent}>
             <View style={styles.deleteIconContainer}>
-              <View style={styles.deleteIcon}>
-                <Feather name="check-circle" size={32} color="#0dc025ff" />
+              <View style={[styles.deleteIcon, { backgroundColor: employeeToStatusUpdate?.status === 'ACTIVE' ? '#F9731620' : '#4CAF5020' }]}>
+                <Feather 
+                  name={employeeToStatusUpdate?.status === 'ACTIVE' ? "user-x" : "user-check"} 
+                  size={32} 
+                  color={employeeToStatusUpdate?.status === 'ACTIVE' ? "#FB923C" : "#4CAF50"} 
+                />
               </View>
             </View>
 
-            <Text style={styles.deleteTitle}>Update Employee Status</Text>
+            <Text style={styles.deleteTitle}>
+              {employeeToStatusUpdate?.status === 'ACTIVE' ? 'Deactivate Employee' : 'Activate Employee'}
+            </Text>
             <Text style={styles.deleteMessage}>
-              Are you sure you want to update the status of {' '}
+              Are you sure you want to update the status of{' '}
               <Text style={styles.employeeNameHighlight}>
                 {employeeToStatusUpdate?.name}
               </Text>{' '}
-              from {employeeToStatusUpdate?.status === 'ACTIVE' ? <Text style={{color: '#0dc025ff',fontWeight: 'bold'}}>
-                ACTIVE</Text> : <Text style={{color: '#D0021B',fontWeight: 'bold'}}>INACTIVE</Text>} 
-                {` `} to {` `}
-                {employeeToStatusUpdate?.status === 'ACTIVE' ? <Text style={{color: '#D0021B',fontWeight: 'bold'}}>INACTIVE</Text> : 
-                <Text style={{color: '#0dc025ff',fontWeight: 'bold'}}>ACTIVE</Text>}?
+              from {employeeToStatusUpdate?.status === 'ACTIVE' ? (
+                <Text style={{color: '#4CAF50', fontWeight: 'bold'}}>ACTIVE</Text>
+              ) : (
+                <Text style={{color: '#FB923C', fontWeight: 'bold'}}>INACTIVE</Text>
+              )} to {employeeToStatusUpdate?.status === 'ACTIVE' ? (
+                <Text style={{color: '#FB923C', fontWeight: 'bold'}}>INACTIVE</Text>
+              ) : (
+                <Text style={{color: '#4CAF50', fontWeight: 'bold'}}>ACTIVE</Text>
+              )}?
+              {employeeToStatusUpdate?.status === 'ACTIVE' && (
+                '\n\nThey will be prevented from logging in or recording attendance until reactivated.'
+              )}
             </Text>
 
             <View style={styles.deleteModalActions}>
@@ -662,10 +776,151 @@ function EmployeeManagement() {
                 <Text style={styles.deleteCancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.deleteConfirmButton} 
+                style={[styles.deleteConfirmButton, { backgroundColor: employeeToStatusUpdate?.status === 'ACTIVE' ? '#F97316' : '#4CAF50' }]} 
                 onPress={confirmStatusUpdate}
               >
-                <Text style={styles.deleteConfirmButtonText}>Update</Text>
+                <Text style={styles.deleteConfirmButtonText}>
+                  {employeeToStatusUpdate?.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Reset Password Confirmation Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={resetModalVisible}
+        onRequestClose={cancelResetPassword}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <View style={styles.deleteIconContainer}>
+              <View style={[styles.deleteIcon, { backgroundColor: '#9C27B020' }]}>
+                <Feather name="key" size={32} color="#BA68C8" />
+              </View>
+            </View>
+
+            <Text style={styles.deleteTitle}>Reset Employee Password</Text>
+            <Text style={styles.deleteMessage}>
+              Are you sure you want to reset the password for{' '}
+              <Text style={styles.employeeNameHighlight}>
+                {employeeToReset?.name}
+              </Text>?
+              {'\n\n'}A secure random password will be generated for them to log in.
+            </Text>
+
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity 
+                style={styles.deleteCancelButton} 
+                onPress={cancelResetPassword}
+                disabled={isResettingPassword}
+              >
+                <Text style={styles.deleteCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.deleteConfirmButton, { backgroundColor: '#9C27B0' }]} 
+                onPress={confirmResetPassword}
+                disabled={isResettingPassword}
+              >
+                {isResettingPassword ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.deleteConfirmButtonText}>Reset</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Temporary Password Result Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={tempPasswordModalVisible}
+        onRequestClose={() => {
+          setTempPasswordModalVisible(false);
+          setPasswordCopied(false);
+        }}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.resultModalContent}>
+            {/* Header Badge */}
+            <View style={styles.resultIconContainer}>
+              <View style={styles.resultIconBadge}>
+                <Feather name="check" size={32} color="#22C55E" />
+              </View>
+            </View>
+
+            <Text style={styles.resultTitle}>Password Reset Successful</Text>
+            <Text style={styles.resultSubtitle}>
+              Temporary password for{' '}
+              <Text style={styles.employeeNameHighlight}>
+                {generatedPasswordData?.employee?.name}
+              </Text>:
+            </Text>
+
+            {/* Credential Card with Inline Copy Action */}
+            <View style={styles.credentialCard}>
+              <View style={styles.credentialHeader}>
+                <Text style={styles.credentialLabel}>TEMPORARY PASSWORD</Text>
+                <TouchableOpacity
+                  style={[styles.copyChip, passwordCopied && styles.copyChipSuccess]}
+                  onPress={handleCopyPassword}
+                  activeOpacity={0.7}
+                >
+                  <Feather 
+                    name={passwordCopied ? "check" : "copy"} 
+                    size={12} 
+                    color={passwordCopied ? "#22C55E" : "#38BDF8"} 
+                  />
+                  <Text style={[styles.copyChipText, passwordCopied && styles.copyChipTextSuccess]}>
+                    {passwordCopied ? "Copied!" : "Copy"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity 
+                style={styles.passwordRow}
+                onPress={handleCopyPassword}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.passwordDisplayText} selectable={true}>
+                  {generatedPasswordData?.temporaryPassword}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Instruction Info Note */}
+            <View style={styles.resultInfoBox}>
+              <Feather name="info" size={14} color="#60A5FA" style={{ marginTop: 2 }} />
+              <Text style={styles.resultInfoText}>
+                Share this password with the employee. They can use it to log in and change it anytime from their Profile screen.
+              </Text>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.resultActionRow}>
+              <TouchableOpacity 
+                style={styles.resultDoneButton} 
+                onPress={() => {
+                  setTempPasswordModalVisible(false);
+                  setPasswordCopied(false);
+                }}
+              >
+                <Text style={styles.resultDoneButtonText}>Done</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.resultShareButton} 
+                onPress={handleSharePassword}
+                activeOpacity={0.8}
+              >
+                <Feather name="share-2" size={15} color="#FFFFFF" />
+                <Text style={styles.resultShareButtonText}>Share</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -867,7 +1122,7 @@ const styles = StyleSheet.create({
   cardActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 6,
   },
   actionButton: {
     flex: 1,
@@ -875,22 +1130,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    gap: 4,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    gap: 3,
   },
   viewButton: {
-    backgroundColor: '#4A90E215',
+    backgroundColor: '#4A90E218',
   },
   editButton: {
-    backgroundColor: '#F5A62315',
+    backgroundColor: '#F5A62318',
+  },
+  resetButton: {
+    backgroundColor: '#BA68C818',
+  },
+  deactivateButton: {
+    backgroundColor: '#F9731618',
+  },
+  activateButton: {
+    backgroundColor: '#4CAF5018',
   },
   deleteButton: {
-    backgroundColor: '#D0021B15',
+    backgroundColor: '#F9731618',
   },
   actionText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
   },
   
   // Modal Styles
@@ -1075,5 +1339,175 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  passwordDisplayBox: {
+    backgroundColor: '#111a22',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#4A90E2',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 10,
+    width: '100%',
+  },
+  passwordDisplayText: {
+    color: '#38BDF8',
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 4,
+    fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier',
+  },
+  passwordHintText: {
+    fontSize: 12,
+    color: '#8A9BAE',
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 8,
+  },
+
+  // Redesigned Temporary Password Result Modal Styles
+  resultModalContent: {
+    backgroundColor: '#192633',
+    borderRadius: 18,
+    padding: 24,
+    width: '92%',
+    maxWidth: 400,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2A3441',
+  },
+  resultIconContainer: {
+    marginBottom: 14,
+  },
+  resultIconBadge: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(34, 197, 94, 0.28)',
+  },
+  resultTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  resultSubtitle: {
+    fontSize: 14,
+    color: '#8A9BAE',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  credentialCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#38BDF835',
+    padding: 14,
+    width: '100%',
+    marginBottom: 12,
+  },
+  credentialHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  credentialLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 1,
+  },
+  copyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+  },
+  copyChipSuccess: {
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    borderColor: 'rgba(34, 197, 94, 0.35)',
+  },
+  copyChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#38BDF8',
+  },
+  copyChipTextSuccess: {
+    color: '#22C55E',
+  },
+  passwordRow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  resultInfoBox: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.18)',
+    marginBottom: 20,
+    width: '100%',
+  },
+  resultInfoText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#94A3B8',
+    lineHeight: 18,
+  },
+  resultActionRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 10,
+  },
+  resultDoneButton: {
+    flex: 1,
+    backgroundColor: '#223344',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  resultDoneButtonText: {
+    color: '#E2E8F0',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  resultShareButton: {
+    flex: 1,
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  resultShareButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

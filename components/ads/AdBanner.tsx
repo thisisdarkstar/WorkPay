@@ -65,19 +65,24 @@ export const AdBanner: React.FC<AdBannerProps> = ({
   }
 
   const { BannerAd } = googleAds;
-  const unitId = adUnitId || getBannerAdUnitId();
+  const isAdaptive =
+    size === BannerAdSize.ANCHORED_ADAPTIVE_BANNER ||
+    size === BannerAdSize.LARGE_ANCHORED_ADAPTIVE_BANNER ||
+    size === BannerAdSize.INLINE_ADAPTIVE_BANNER;
+  const unitId = adUnitId || getBannerAdUnitId(isAdaptive);
+  const actualSize = unitId.includes('6300978111') ? BannerAdSize.BANNER : size;
 
   return (
     <View style={[styles.container, style]}>
       <BannerAd
         unitId={unitId}
-        size={size}
+        size={actualSize}
         requestOptions={AD_REQUEST_OPTIONS}
         onAdLoaded={() => {
           setAdError(false);
         }}
         onAdFailedToLoad={(error: any) => {
-          console.log('[AdMob] Banner ad failed to load:', error);
+          console.warn('[AdMob] Banner ad failed to load:', error);
           setAdError(true);
         }}
       />

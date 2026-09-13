@@ -2,6 +2,8 @@ import Feather from "@expo/vector-icons/Feather";
 import axios from "axios";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DataCard from "../../components/Attendance/DataCard";
 import { url } from "../../constants/EnvValue";
@@ -39,6 +41,9 @@ function Attendance() {
 
   // Handle left arrow (previous month)
   const handlePrev = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (_) {}
     if (currentMonth === 1) {
       setCurrentMonth(12);
       setCurrentYear(currentYear - 1);
@@ -49,6 +54,9 @@ function Attendance() {
 
   // Handle right arrow (next month)
   const handleNext = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (_) {}
     if (currentMonth === 12) {
       setCurrentMonth(1);
       setCurrentYear(currentYear + 1);
@@ -123,7 +131,10 @@ function Attendance() {
           contentContainerStyle={{ paddingBottom: 20 }}
           ListHeaderComponent={
             <View style={styles.overViewContainer}>
-              <View style={styles.overViewCard}>
+              <Animated.View 
+                entering={FadeInDown.duration(350).springify()}
+                style={styles.overViewCard}
+              >
                 <View style={styles.row}>
                   <Text style={styles.label}>Total Working Days</Text>
                   <Text style={styles.value}>{getTotalDaysInMonth(currentMonth, currentYear)}</Text>
@@ -140,20 +151,26 @@ function Attendance() {
                   <Text style={styles.label}>Total Overtime Hours</Text>
                   <Text style={styles.value}>{(calculateTotalOvertime(records) || 0).toFixed(2)} hr</Text>
                 </View>
-              </View>
+              </Animated.View>
             </View>
           }
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
+            <Animated.View 
+              entering={FadeIn.duration(300)}
+              style={styles.emptyContainer}
+            >
               <Feather name="calendar" size={48} color="#475569" />
               <Text style={styles.emptyTitle}>No Attendance Records</Text>
               <Text style={styles.emptySubtitle}>No entries logged for this month</Text>
-            </View>
+            </Animated.View>
           }
-          renderItem={({ item }) => (
-            <View style={styles.cardWrapper}>
+          renderItem={({ item, index }) => (
+            <Animated.View 
+              entering={FadeInDown.delay(Math.min(index * 30, 240)).duration(280).springify()}
+              style={styles.cardWrapper}
+            >
               <DataCard data={item} />
-            </View>
+            </Animated.View>
           )}
         />
       )}

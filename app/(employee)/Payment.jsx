@@ -31,12 +31,13 @@ function Payment() {
 
   // Helper function to calculate totals for a month's transactions
   const calculateMonthTotals = (transactions) => {
-    if (!Array.isArray(transactions)) return { overtime: 0, deduction: 0, advance: 0 };
+    if (!Array.isArray(transactions)) return { overtime: 0, deduction: 0, advance: 0, bonus: 0 };
     const overtime = transactions.reduce((acc, it) => acc + (it.payType === "OVERTIME" ? (Number(it.amount) || 0) : 0), 0);
     const deduction = transactions.reduce((acc, it) => acc + (it.payType === "DEDUCTION" ? (Number(it.amount) || 0) : 0), 0);
     const advance = transactions.reduce((acc, it) => acc + (it.payType === "ADVANCE" ? (Number(it.amount) || 0) : 0), 0);
+    const bonus = transactions.reduce((acc, it) => acc + (it.payType === "BONUS" ? (Number(it.amount) || 0) : 0), 0);
     
-    return { overtime, deduction, advance };
+    return { overtime, deduction, advance, bonus };
   };
 
   // Helper function to determine payment status
@@ -71,7 +72,7 @@ function Payment() {
   // Current month calculations
   const currentMonthTransactions = paymentData?.currentTransaction?.transactions || [];
   const currentMonthTotals = calculateMonthTotals(currentMonthTransactions);
-  const currentMonthTotal = (paymentData?.baseSalary || 0) + currentMonthTotals.overtime - currentMonthTotals.deduction - currentMonthTotals.advance;
+  const currentMonthTotal = (paymentData?.baseSalary || 0) + currentMonthTotals.overtime + currentMonthTotals.bonus - currentMonthTotals.deduction - currentMonthTotals.advance;
 
   return (
     <SafeAreaView style={styles.mainContainer}>
@@ -96,6 +97,10 @@ function Payment() {
             <View style={styles.detailItem}>
               <Text style={styles.detailText}>OverTime :</Text>
               <Text style={styles.detailAmount}>+ Rs {currentMonthTotals.overtime}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Text style={styles.detailText}>Bonus :</Text>
+              <Text style={[styles.detailAmount, { color: '#10B981' }]}>+ Rs {currentMonthTotals.bonus}</Text>
             </View>
             <View style={styles.detailItem}>
               <Text style={styles.detailText}>Deduction :</Text>
@@ -165,7 +170,7 @@ function Payment() {
               {paymentData?.previousTransaction && paymentData.previousTransaction.length > 0 ? (
                 paymentData.previousTransaction.map((monthData, index) => {
                   const monthTotals = calculateMonthTotals(monthData.transactions);
-                  const monthTotal = monthData.baseSalary + monthTotals.overtime - monthTotals.deduction - monthTotals.advance;
+                  const monthTotal = (monthData.baseSalary || 0) + monthTotals.overtime + monthTotals.bonus - monthTotals.deduction - monthTotals.advance;
                   const status = getPaymentStatus(monthData.transactions, monthData.baseSalary);
                   const itemId = `${monthData.month}- ${selectedYear}- ${index}`;
                   const isOpen = expanded === index;
@@ -200,6 +205,10 @@ function Payment() {
                           <View style={styles.detailItem}>
                             <Text style={styles.detailText}>OverTime :</Text>
                             <Text style={styles.detailAmount}>+ Rs {monthTotals.overtime}</Text>
+                          </View>
+                          <View style={styles.detailItem}>
+                            <Text style={styles.detailText}>Bonus :</Text>
+                            <Text style={[styles.detailAmount, { color: '#10B981' }]}>+ Rs {monthTotals.bonus}</Text>
                           </View>
                           <View style={styles.detailItem}>
                             <Text style={styles.detailText}>Deduction :</Text>

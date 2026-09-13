@@ -30,12 +30,16 @@ function AdminSalaryManagement() {
   const [loading, setLoading] = useState(true)
   const [advanceModalVisible, setAdvanceModalVisible] = useState(false)
   const [deductionModalVisible, setDeductionModalVisible] = useState(false)
+  const [bonusModalVisible, setBonusModalVisible] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState(null)
   const [advanceAmount, setAdvanceAmount] = useState(null)
   const [deductionAmount, setDeductionAmount] = useState(null)
   const [deductionDescription, setDeductionDescription] = useState(null)
+  const [bonusAmount, setBonusAmount] = useState(null)
+  const [bonusDescription, setBonusDescription] = useState(null)
   const [processingAdvance, setProcessingAdvance] = useState(false)
   const [processingDeduction, setProcessingDeduction] = useState(false)
+  const [processingBonus, setProcessingBonus] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [paymentData,setPaymentData] = useState([]);
@@ -67,12 +71,13 @@ function AdminSalaryManagement() {
 
 
     const calculateMonthTotals = (transactions) => {
-    if (!Array.isArray(transactions)) return { overtime: 0, deduction: 0, advance: 0 };
+    if (!Array.isArray(transactions)) return { overtime: 0, deduction: 0, advance: 0, bonus: 0 };
     const overtime = transactions.reduce((acc, it) => acc + (it?.payType === "OVERTIME" ? (Number(it?.amount) || 0) : 0), 0);
     const deduction = transactions.reduce((acc, it) => acc + (it?.payType === "DEDUCTION" ? (Number(it?.amount) || 0) : 0), 0);
     const advance = transactions.reduce((acc, it) => acc + (it?.payType === "ADVANCE" ? (Number(it?.amount) || 0) : 0), 0);
+    const bonus = transactions.reduce((acc, it) => acc + (it?.payType === "BONUS" ? (Number(it?.amount) || 0) : 0), 0);
     
-    return { overtime, deduction, advance };
+    return { overtime, deduction, advance, bonus };
   };
 
 
@@ -116,86 +121,91 @@ function AdminSalaryManagement() {
   const isNextDisabled = selectedMonth === currentMonth && selectedYear === currentYear
 
   const handleSettleSalary = async (employee) => {
+    const targetEmpId = Number(employee?.empId || employee?.id);
+    if (!targetEmpId) {
+      showToast('Employee information is missing', 'Error');
+      return;
+    }
     setSelectedEmployee(employee);
-      try {
+    const totals = calculateMonthTotals(employee.transactions);
+    const finalAmount = Number(employee.baseSalary || 0) + totals.overtime + totals.bonus - totals.deduction - totals.advance;
+    try {
       const response = await axios.post(`${url}/api/transactions/add-transaction`, 
         {
-          empId:employee.empId,
-          amount:(employee.baseSalary + 
-        calculateMonthTotals(employee.transactions).overtime 
-        - calculateMonthTotals(employee.transactions).deduction
-        -calculateMonthTotals(employee.transactions).advance
-      ),
-          description:`Salary payment for ${employee.name} of amount ${employee.baseSalary + 
-        calculateMonthTotals(employee.transactions).overtime 
-        - calculateMonthTotals(employee.transactions).deduction
-        -calculateMonthTotals(employee.transactions).advance
-      }`,
-          type:"SALARY"
-        }
-        ,
+          empId: targetEmpId,
+          amount: finalAmount,
+          description: `Salary payment for ${employee.name} of amount ₹${finalAmount.toLocaleString()}`,
+          type: "SALARY"
+        },
         {
-        headers: {
-          authorization: `Bearer ${await getToken()}`,
+          headers: {
+            authorization: `Bearer ${await getToken()}`,
+          }
         }
-      });
+      );
       const data = response.data;
       showToast(data.message || 'Salary settled successfully', "Success");
       fetchPaymentHistory();
-      console.log(data)
+      console.log(data);
     } catch (err) {
-      showToast(getApiErrorMessage(err, 'Failed to settle salary'), "Error")
+      showToast(getApiErrorMessage(err, 'Failed to settle salary'), "Error");
       console.log(err);
     }
-
-  }
+  };
 
   const handleAdvancePayment = (employee) => {
-    setSelectedEmployee(employee)
-    setAdvanceAmount(null)
-    setAdvanceModalVisible(true)
-  }
+    setSelectedEmployee(employee);
+    setAdvanceAmount(null);
+    setAdvanceModalVisible(true);
+  };
 
   const handleDeductionPayment = (employee) => {
-    setSelectedEmployee(employee)
-    setDeductionAmount(null)
-    setDeductionDescription(null)
-    setDeductionModalVisible(true)
-  }
+    setSelectedEmployee(employee);
+    setDeductionAmount(null);
+    setDeductionDescription(null);
+    setDeductionModalVisible(true);
+  };
+
+  const handleBonusPayment = (employee) => {
+    setSelectedEmployee(employee);
+    setBonusAmount(null);
+    setBonusDescription(null);
+    setBonusModalVisible(true);
+  };
 
   const processAdvancePayment = async () => {
-      if( Number(advanceAmount) > (selectedEmployee.baseSalary + 
-        calculateMonthTotals(selectedEmployee.transactions).overtime 
-        - calculateMonthTotals(selectedEmployee.transactions).deduction
-        -calculateMonthTotals(selectedEmployee.transactions).advance
-      )){
-            showToast( `Advance amount cannot exceed ₹${(selectedEmployee.baseSalary + 
-        calculateMonthTotals(selectedEmployee.transactions).overtime 
-        - calculateMonthTotals(selectedEmployee.transactions).deduction
-        -calculateMonthTotals(selectedEmployee.transactions).advance).toLocaleString()}`,'Error')
-      return
-      }
-      try {
+    const targetEmpId = Number(selectedEmployee?.empId || selectedEmployee?.id);
+    if (!targetEmpId) {
+      showToast('Employee information is missing', 'Error');
+      return;
+    }
+    const totals = calculateMonthTotals(selectedEmployee?.transactions);
+    const maxAdvance = Number(selectedEmployee?.baseSalary || 0) + totals.overtime + totals.bonus - totals.deduction - totals.advance;
+    if (Number(advanceAmount) > maxAdvance) {
+      showToast(`Advance amount cannot exceed ₹${maxAdvance.toLocaleString()}`, 'Error');
+      return;
+    }
+    try {
       setProcessingAdvance(true);
       const response = await axios.post(`${url}/api/transactions/add-transaction`, 
         {
-          empId:selectedEmployee.empId,
-          amount:advanceAmount,
-          description:`Advance payment for ${selectedEmployee.name} of amount ${advanceAmount}`,
-          type:"ADVANCE"
-        }
-        ,
+          empId: targetEmpId,
+          amount: advanceAmount,
+          description: `Advance payment for ${selectedEmployee?.name || 'Employee'} of amount ${advanceAmount}`,
+          type: "ADVANCE"
+        },
         {
-        headers: {
-          authorization: `Bearer ${await getToken()}`,
+          headers: {
+            authorization: `Bearer ${await getToken()}`,
+          }
         }
-      });
+      );
       const data = response.data;
-      if(data.message){
+      if (data.message) {
         showToast(data.message, "Success");
         fetchPaymentHistory();
         setAdvanceAmount(null);
-        setAdvanceModalVisible(false)
+        setAdvanceModalVisible(false);
       }
     } catch (err) {
       showToast(getApiErrorMessage(err, 'Failed to process advance payment'), "Error");
@@ -203,10 +213,55 @@ function AdminSalaryManagement() {
     } finally {
       setProcessingAdvance(false);
     }
-      
-  }
+  };
+
+  const processBonusPayment = async () => {
+    const targetEmpId = Number(selectedEmployee?.empId || selectedEmployee?.id);
+    if (!targetEmpId) {
+      showToast('Employee information is missing', 'Error');
+      return;
+    }
+    if (!bonusAmount || isNaN(Number(bonusAmount)) || Number(bonusAmount) <= 0) {
+      showToast('Please enter a valid bonus amount', 'Warning');
+      return;
+    }
+    try {
+      setProcessingBonus(true);
+      const response = await axios.post(`${url}/api/transactions/add-transaction`,
+        {
+          empId: targetEmpId,
+          amount: Number(bonusAmount),
+          description: bonusDescription?.trim() ? bonusDescription.trim() : `Bonus payment for ${selectedEmployee?.name || 'Employee'}`,
+          type: "BONUS"
+        },
+        {
+          headers: {
+            authorization: `Bearer ${await getToken()}`,
+          }
+        }
+      );
+      const data = response.data;
+      if (data.message) {
+        showToast(data.message, "Success");
+        fetchPaymentHistory();
+        setBonusAmount(null);
+        setBonusDescription(null);
+        setBonusModalVisible(false);
+      }
+    } catch (err) {
+      showToast(getApiErrorMessage(err, 'Failed to process bonus'), "Error");
+      console.log(err);
+    } finally {
+      setProcessingBonus(false);
+    }
+  };
 
   const processDeductionTransaction = async () => {
+    const targetEmpId = Number(selectedEmployee?.empId || selectedEmployee?.id);
+    if (!targetEmpId) {
+      showToast('Employee information is missing', 'Error');
+      return;
+    }
     if(!deductionAmount || !deductionDescription) {
       showToast('Please fill all fields', 'Error');
       return;
@@ -216,7 +271,7 @@ function AdminSalaryManagement() {
       setProcessingDeduction(true);
       const response = await axios.post(`${url}/api/transactions/add-transaction`, 
         {
-          empId: selectedEmployee.empId,
+          empId: targetEmpId,
           amount: deductionAmount,
           description: deductionDescription,
           type: "DEDUCTION"
@@ -286,6 +341,13 @@ function AdminSalaryManagement() {
           </View>
           
           <View style={styles.salaryRow}>
+            <Text style={styles.salaryLabel}>Bonus</Text>
+            <Text style={[styles.salaryAmount, { color: '#10B981' }]}>
+              + ₹{totals.bonus}
+            </Text>
+          </View>
+
+          <View style={styles.salaryRow}>
             <Text style={styles.salaryLabel}>Deductions </Text>
             <Text style={[styles.salaryAmount, { color: '#D0021B' }]}>
               - ₹{totals.deduction}
@@ -301,7 +363,7 @@ function AdminSalaryManagement() {
           
           <View style={[styles.salaryRow, styles.finalSalaryRow]}>
             <Text style={styles.finalSalaryLabel}>Final Salary</Text>
-            <Text style={styles.finalSalaryAmount}>₹{base + totals.overtime - totals.deduction - totals.advance}</Text>
+            <Text style={styles.finalSalaryAmount}>₹{base + totals.overtime + totals.bonus - totals.deduction - totals.advance}</Text>
           </View>
         </View>
 
@@ -318,26 +380,33 @@ function AdminSalaryManagement() {
             </TouchableOpacity>
           )}
           
-          {/* Advance Payment - Only for Current Month */}
+          {/* Advance, Deduction & Bonus - In the same row */}
           {!isPaid && isCurrentMonth() && (
-            <TouchableOpacity
-              style={styles.advanceButton}
-              onPress={() => handleAdvancePayment(item)}
-            >
-              <MaterialCommunityIcons name="cash" size={16} color="#4A90E2" />
-              <Text style={styles.advanceButtonText}>Advance</Text>
-            </TouchableOpacity>
-          )}
+            <View style={styles.secondaryActionsRow}>
+              <TouchableOpacity
+                style={styles.advanceButton}
+                onPress={() => handleAdvancePayment(item)}
+              >
+                <MaterialCommunityIcons name="cash" size={14} color="#4A90E2" />
+                <Text style={styles.advanceButtonText}>Advance</Text>
+              </TouchableOpacity>
 
-          {/* Deduction Button - Only for Current Month */}
-          {!isPaid && isCurrentMonth() && (
-            <TouchableOpacity
-              style={styles.deductionButton}
-              onPress={() => handleDeductionPayment(item)}
-            >
-              <MaterialCommunityIcons name="minus-circle" size={16} color="#F5A623" />
-              <Text style={styles.deductionButtonText}>Deduction</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deductionButton}
+                onPress={() => handleDeductionPayment(item)}
+              >
+                <MaterialCommunityIcons name="minus-circle" size={14} color="#F5A623" />
+                <Text style={styles.deductionButtonText}>Deduction</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.bonusButton}
+                onPress={() => handleBonusPayment(item)}
+              >
+                <MaterialCommunityIcons name="gift" size={14} color="#10B981" />
+                <Text style={styles.bonusButtonText}>Bonus</Text>
+              </TouchableOpacity>
+            </View>
           )}
           
           {/* Paid Status Indicator */}
@@ -478,6 +547,12 @@ function AdminSalaryManagement() {
                     </Text>
                   </View>
                   <View style={styles.modalSalaryRow}>
+                    <Text style={styles.modalSalaryText}>Bonus:</Text>
+                    <Text style={[styles.modalSalaryAmount, { color: '#10B981' }]}>
+                      + ₹{calculateMonthTotals(selectedEmployee.transactions).bonus.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.modalSalaryRow}>
                     <Text style={styles.modalSalaryText}>Deductions:</Text>
                     <Text style={[styles.modalSalaryAmount, { color: '#D0021B' }]}>
                       - ₹{calculateMonthTotals(selectedEmployee.transactions).deduction.toLocaleString()}
@@ -486,10 +561,11 @@ function AdminSalaryManagement() {
                   <View style={[styles.modalSalaryRow, styles.maxAdvanceRow]}>
                     <Text style={styles.modalSalaryText}>Max Advance:</Text>
                     <Text style={styles.modalSalaryAmount}>
-                      ₹{(selectedEmployee.baseSalary +
-                         calculateMonthTotals(selectedEmployee.transactions).overtime 
+                      ₹{(Number(selectedEmployee.baseSalary || 0) +
+                         calculateMonthTotals(selectedEmployee.transactions).overtime +
+                         calculateMonthTotals(selectedEmployee.transactions).bonus
                          - calculateMonthTotals(selectedEmployee.transactions).deduction
-                         -calculateMonthTotals(selectedEmployee.transactions).advance
+                         - calculateMonthTotals(selectedEmployee.transactions).advance
                          ).toLocaleString()}
                     </Text>
                   </View>
@@ -572,6 +648,12 @@ function AdminSalaryManagement() {
                     </Text>
                   </View>
                   <View style={styles.modalSalaryRow}>
+                    <Text style={styles.modalSalaryText}>Bonus:</Text>
+                    <Text style={[styles.modalSalaryAmount, { color: '#10B981' }]}>
+                      + ₹{calculateMonthTotals(selectedEmployee.transactions).bonus.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.modalSalaryRow}>
                     <Text style={styles.modalSalaryText}>Current Deductions:</Text>
                     <Text style={[styles.modalSalaryAmount, { color: '#D0021B' }]}>
                       - ₹{calculateMonthTotals(selectedEmployee.transactions).deduction.toLocaleString()}
@@ -580,10 +662,11 @@ function AdminSalaryManagement() {
                   <View style={[styles.modalSalaryRow, styles.maxAdvanceRow]}>
                     <Text style={styles.modalSalaryText}>Current Final Salary:</Text>
                     <Text style={styles.modalSalaryAmount}>
-                      ₹{(selectedEmployee.baseSalary +
-                         calculateMonthTotals(selectedEmployee.transactions).overtime 
+                      ₹{(Number(selectedEmployee.baseSalary || 0) +
+                         calculateMonthTotals(selectedEmployee.transactions).overtime +
+                         calculateMonthTotals(selectedEmployee.transactions).bonus
                          - calculateMonthTotals(selectedEmployee.transactions).deduction
-                         -calculateMonthTotals(selectedEmployee.transactions).advance
+                         - calculateMonthTotals(selectedEmployee.transactions).advance
                          ).toLocaleString()}
                     </Text>
                   </View>
@@ -633,6 +716,84 @@ function AdminSalaryManagement() {
                       <>
                         <MaterialCommunityIcons name="minus-circle" size={16} color="#fff" />
                         <Text style={styles.processButtonText}>Process</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Bonus Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={bonusModalVisible}
+        onRequestClose={() => setBonusModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Bonus</Text>
+              <TouchableOpacity
+                onPress={() => setBonusModalVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <MaterialIcons name="close" size={24} color="#8A9BAE" />
+              </TouchableOpacity>
+            </View>
+            
+            {selectedEmployee && (
+              <View style={styles.modalBody}>
+                <Text style={styles.modalEmployeeName}>{selectedEmployee.name}</Text>
+                <Text style={styles.modalEmployeePhone}>{selectedEmployee.phone}</Text>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Bonus Amount</Text>
+                  <TextInput
+                    style={styles.advanceInput}
+                    placeholder="Enter bonus amount"
+                    placeholderTextColor="#8A9BAE"
+                    value={bonusAmount}
+                    onChangeText={setBonusAmount}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Description / Reason (Optional)</Text>
+                  <TextInput
+                    style={[styles.advanceInput, styles.descriptionInput]}
+                    placeholder="e.g. Festival bonus, Performance incentive"
+                    placeholderTextColor="#8A9BAE"
+                    value={bonusDescription}
+                    onChangeText={setBonusDescription}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={() => setBonusModalVisible(false)}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.processButton, { backgroundColor: '#10B981' }, processingBonus && styles.disabledButton]}
+                    onPress={processBonusPayment}
+                    disabled={processingBonus}
+                  >
+                    {processingBonus ? (
+                      <Text style={styles.processButtonText}>Processing...</Text>
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons name="gift" size={16} color="#fff" />
+                        <Text style={styles.processButtonText}>Add Bonus</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -848,19 +1009,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    width: '100%',
+  },
   advanceButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#4A90E220',
-    paddingVertical: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 4,
     borderRadius: 8,
-    gap: 6,
+    gap: 4,
   },
   advanceButtonText: {
     color: '#4A90E2',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
   deductionButton: {
@@ -869,13 +1036,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F5A62320',
-    paddingVertical: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 4,
     borderRadius: 8,
-    gap: 6,
+    gap: 4,
   },
   deductionButtonText: {
     color: '#F5A623',
-    fontSize: 14,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  bonusButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10B98120',
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  bonusButtonText: {
+    color: '#10B981',
+    fontSize: 12,
     fontWeight: '600',
   },
   paidIndicator: {

@@ -2,7 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import axios from 'axios';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -18,17 +18,53 @@ import {
 } from 'react-native';
 import { url } from "../constants/EnvValue";
 import { useContextData } from "../context/EmployeeContext";
-import { getApiErrorMessage, storeToken } from '../services/ApiService';
+import { getActiveSession, getApiErrorMessage, storeToken } from '../services/ApiService';
+import { AdBanner } from '../components/ads/AdBanner';
 
 function IndexScreen() {
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isEmployee, setIsEmployee] = useState(true);
   const [employeeLogin, setEmployeeLogin] = useState({ phone: '', password: '' });
   const [adminLogin, setAdminLogin] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [errors,setErrors] = useState({});
-    const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const {showToast} = useContextData()
+  const { showToast } = useContextData();
+
+  // Check for active, unexpired session on app startup
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkExistingSession = async () => {
+      try {
+        const session = await getActiveSession();
+        if (!isMounted) return;
+
+        if (session && session.token) {
+          if (session.role === 'admin') {
+            router.replace('/(admin)/(dashboard)/Dashboard');
+            return;
+          } else {
+            router.replace('/(employee)/(home)/Home');
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('[IndexScreen] Session check error:', err);
+      } finally {
+        if (isMounted) {
+          setIsCheckingAuth(false);
+        }
+      }
+    };
+
+    checkExistingSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
     // Clear errors when switching tabs
   const clearErrors = () => {
@@ -70,7 +106,7 @@ function IndexScreen() {
       });
 
       if (response.data?.token) {
-        await storeToken(response.data.token);
+        await storeToken(response.data.token, 'employee');
         showToast(response?.data?.message || "Login successful", "Success");
         router.replace('/(employee)/(home)/Home');
       }
@@ -115,7 +151,7 @@ function IndexScreen() {
       });
       
       if (response.data?.token) {
-        await storeToken(response.data.token);
+        await storeToken(response.data.token, 'admin');
         showToast(response?.data?.message || "Login successful", "Success");
         router.replace('/(admin)/(dashboard)/Dashboard');
       }
@@ -128,6 +164,18 @@ function IndexScreen() {
     }
   };
 
+  if (isCheckingAuth) {
+    return (
+      <View style={styles.splashLoadingContainer}>
+        <Image
+          source={require('../assets/images/icon.png')}
+          style={styles.splashLoadingLogo}
+          contentFit="contain"
+        />
+        <ActivityIndicator size="large" color="#4da6ff" style={{ marginTop: 24 }} />
+      </View>
+    );
+  }
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -150,6 +198,7 @@ function IndexScreen() {
               <Image source={require('../assets/images/icon.png')} style={styles.logo} contentFit="contain" />
             </View>
             <Text style={styles.title}>WorkPay</Text>
+            <Text style={styles.subtitle}>by SANGHARSH GROUP</Text>
           </View>
 
       {/* Main Card */}
@@ -360,6 +409,9 @@ function IndexScreen() {
       <View style={styles.footer}>
         <Text style={styles.footerText}>Secure • Reliable • Easy</Text>
       </View>
+
+      {/* AdMob Banner for easy verification */}
+      <AdBanner style={{ marginTop: 24, marginBottom: 12 }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
@@ -394,15 +446,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   logoContainer: {
-    width: 100,
-    height: 100,
-    backgroundColor: 'rgba(77, 166, 255, 0.1)',
-    borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
-    borderWidth: 2,
-    borderColor: 'rgba(77, 166, 255, 0.3)',
   },
   title: {
     fontSize: 32,
@@ -563,8 +609,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   logo: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  }
+    width: 88,
+    height: 88,
+  },
+  splashLoadingContainer: {
+    flex: 1,
+    backgroundColor: '#0f1419',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  splashLoadingLogo: {
+    width: 96,
+    height: 96,
+  },
 });

@@ -2,7 +2,7 @@ import AntDesign from '@expo/vector-icons/AntDesign';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
@@ -14,6 +14,7 @@ function LeaveRequests() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('pendingLeaves');
   const [data,setData] = useState([]);
+  const [processingLeaveId, setProcessingLeaveId] = useState(null);
   const {showToast} = useContextData();
   const {id} = useLocalSearchParams();
 
@@ -35,7 +36,9 @@ function LeaveRequests() {
   }
 
   const handleAcceptReject = async (leaveId, type) => {
+    if (processingLeaveId) return;
     try {
+      setProcessingLeaveId(leaveId);
       const token = await getToken();
       if (!token) return;
       const response = await axios.post(`${url}/api/leaves/update-status`,
@@ -55,6 +58,8 @@ function LeaveRequests() {
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to update leave status"), "Error");
       console.error("Error updating leave status", error);
+    } finally {
+      setProcessingLeaveId(null);
     }
   }
 
@@ -140,15 +145,23 @@ function LeaveRequests() {
                 {activeTab === 'pendingLeaves' ? (
                   <View style={styles.actionButtons}>
                     <TouchableOpacity 
-                      style={[styles.actionButton, styles.acceptButton]}
+                      style={[styles.actionButton, styles.acceptButton, processingLeaveId === request.id && { opacity: 0.6 }]}
                       onPress={() => handleAcceptReject(request.id,"APPROVED")}
+                      disabled={!!processingLeaveId}
                     >
-                      <AntDesign name="check" size={16} color="#ffffff" />
-                      <Text style={styles.actionButtonText}>Accept</Text>
+                      {processingLeaveId === request.id ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <>
+                          <AntDesign name="check" size={16} color="#ffffff" />
+                          <Text style={styles.actionButtonText}>Accept</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                     <TouchableOpacity 
-                      style={[styles.actionButton, styles.rejectButton]}
+                      style={[styles.actionButton, styles.rejectButton, processingLeaveId === request.id && { opacity: 0.6 }]}
                       onPress={() => handleAcceptReject(request.id,"REJECTED")}
+                      disabled={!!processingLeaveId}
                     >
                       <AntDesign name="close" size={16} color="#ffffff" />
                       <Text style={styles.actionButtonText}>Reject</Text>

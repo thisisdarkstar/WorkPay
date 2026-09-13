@@ -8,6 +8,7 @@ import { OfficeProvider } from "../context/OfficeContext";
 
 import { useEffect } from 'react';
 import { isNativeAdMobAvailable, getGoogleMobileAds } from '../constants/AdsConfig';
+import { showAppOpenAdOnLaunch } from '../services/AdService';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
 export default function RootLayout() {
@@ -21,10 +22,19 @@ export default function RootLayout() {
       try {
         const googleAds = getGoogleMobileAds();
         if (googleAds && typeof googleAds.default === 'function') {
-          googleAds.default()
+          const mobileAdsInstance = googleAds.default();
+          mobileAdsInstance
+            .setRequestConfiguration({
+              testDeviceIdentifiers: ['EMULATOR', '2DD168D16D2F4A17B994FBE9D34CC2B6'],
+            })
+            .catch((e: any) => console.log('[AdMob] RequestConfig error:', e));
+
+          mobileAdsInstance
             .initialize()
             .then((adapterStatuses: any) => {
               console.log('[AdMob] Initialization complete:', adapterStatuses);
+              // Trigger App Open Ad on launch
+              showAppOpenAdOnLaunch();
             })
             .catch((err: any) => {
               console.log('[AdMob] Init error:', err);

@@ -21,10 +21,12 @@ function OfficeSettings() {
     longitude: null,
     name: '',
     id: null,
-    range:'1000'
+    range:'1000',
+    autoFinalizeTime: null
   });
   const [showStart, setShowStart] = useState(false);
   const [showEnd, setShowEnd] = useState(false);
+  const [showAutoFinalize, setShowAutoFinalize] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [officeList, setOfficeList] = useState([]);
@@ -68,7 +70,8 @@ function OfficeSettings() {
       latitude: data.latitude || null,
       longitude: data.longitude || null,
       id: data.id || null,
-      range: data.range ? String(data.range) : '1000'
+      range: data.range ? String(data.range) : '1000',
+      autoFinalizeTime: data.autoFinalizeTime ? new Date(data.autoFinalizeTime) : null
     });
     setModalVisible(true);
   }
@@ -82,7 +85,8 @@ function OfficeSettings() {
       longitude: null,
       name: '',
       id: null,
-      range:'1000'
+      range:'1000',
+      autoFinalizeTime: null
     });
   }
 
@@ -113,6 +117,7 @@ const addOffice = async () => {
     
     const checkinUTC = convertToUTC(formData.startTime);
     const checkoutUTC = convertToUTC(formData.endTime);
+    const autoFinalizeUTC = convertToUTC(formData.autoFinalizeTime);
 
 
          // validate form data
@@ -142,7 +147,8 @@ const addOffice = async () => {
         latitude: formData.latitude,
         longitude: formData.longitude,
         name: formData.name,
-        range:formData.range
+        range:formData.range,
+        autoFinalizeTime: autoFinalizeUTC || null
       }, {
         headers: {
           authorization: `Bearer ${await getToken()}`
@@ -190,6 +196,7 @@ const updateOfficeSettings = async () => {
     
     const checkinUTC = convertToUTC(formData.startTime);
     const checkoutUTC = convertToUTC(formData.endTime);
+    const autoFinalizeUTC = convertToUTC(formData.autoFinalizeTime);
     
 
 
@@ -219,7 +226,8 @@ const updateOfficeSettings = async () => {
       latitude: formData.latitude,
       longitude: formData.longitude,
       name: formData.name,
-      range:formData.range
+      range:formData.range,
+      autoFinalizeTime: autoFinalizeUTC || null
     }, {
       headers: {
         authorization: `Bearer ${await getToken()}`
@@ -302,8 +310,10 @@ const deleteOffice = async (officeId) => {
     if (event.type === 'dismissed') {
       if (type === 'start') {
         setShowStart(false);
-      } else {
+      } else if (type === 'end') {
         setShowEnd(false);
+      } else if (type === 'autoFinalize') {
+        setShowAutoFinalize(false);
       }
       return;
     }
@@ -311,9 +321,12 @@ const deleteOffice = async (officeId) => {
     if (type === 'start') {
       setShowStart(false);
       updateFormData('startTime', currentTime);
-    } else {
+    } else if (type === 'end') {
       setShowEnd(false);
       updateFormData('endTime', currentTime);
+    } else if (type === 'autoFinalize') {
+      setShowAutoFinalize(false);
+      updateFormData('autoFinalizeTime', currentTime);
     }
   };
 
@@ -425,7 +438,10 @@ const deleteOffice = async (officeId) => {
                 Timings: {office.checkin ? new Date(office.checkin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'} - {office.checkout ? new Date(office.checkout).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
               </Text>
               <Text style={{ color: '#8f9eb3' }}>Break Time: {office.breakTime} mins </Text>
-              <Text  style={{ color: '#8f9eb3' }}>Office Range: {office.range} meters</Text>
+              <Text style={{ color: '#8f9eb3' }}>Office Range: {office.range} meters</Text>
+              <Text style={{ color: '#8f9eb3' }}>
+                Auto-Finalize: {office.autoFinalizeTime ? new Date(office.autoFinalizeTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Default (Shift End + 3h)'}
+              </Text>
 
               {/* Edit button - functionality to be implemented */}
               <View style={{ alignItems: 'flex-end', marginTop: 10 ,flexDirection:'row',justifyContent:'flex-end',gap:10,width:'100%'}}>
@@ -647,13 +663,14 @@ const deleteOffice = async (officeId) => {
 
 
                                 {/* Checkin Range */}
-                              <View style={{ gap: 10, marginBottom: 10,marginTop:10 }}>
-                                <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>Check-In/Check-Out Range</Text>
+                              <View style={{ gap: 8, marginBottom: 10, marginTop: 10 }}>
+                                <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>Check-In/Check-Out Allowed Radius</Text>
+                                <Text style={{ color: '#8f9eb3', fontSize: 13 }}>Maximum allowed GPS distance from office for check-in/out.</Text>
                                 <TextInput
                                   value={formData.range}
                                   keyboardType='number-pad'
                                   onChangeText={(text) => updateFormData('range', text)}
-                                  placeholder="Enter Check-In/Out Range in Meters"
+                                  placeholder="e.g. 500 (meters)"
                                   placeholderTextColor="#8f9eb3"
                                   style={{
                                     borderWidth: 1,
@@ -663,6 +680,53 @@ const deleteOffice = async (officeId) => {
                                     color: '#fff'
                                   }}
                                 />
+                              </View>
+
+                              {/* Auto Finalize Attendance */}
+                              <View style={{ gap: 8, marginBottom: 15, marginTop: 5 }}>
+                                <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: 'bold' }}>Auto Finalize Attendance</Text>
+                                <Text style={{ color: '#8f9eb3', fontSize: 13 }}>
+                                  Clocks out forgotten check-outs and marks absentees. If not set, defaults to Shift End + 3h.
+                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                  <TouchableOpacity
+                                    onPress={() => setShowAutoFinalize(true)}
+                                    style={{
+                                      flex: 1,
+                                      borderWidth: 1,
+                                      borderColor: '#334155',
+                                      borderRadius: 10,
+                                      padding: 15,
+                                      backgroundColor: '#1e293b'
+                                    }}
+                                  >
+                                    <Text style={{ color: formData.autoFinalizeTime ? '#38bdf8' : '#8f9eb3', fontWeight: formData.autoFinalizeTime ? 'bold' : 'normal' }}>
+                                      {formData.autoFinalizeTime ? formatTime(formData.autoFinalizeTime) : 'Default (Shift End + 3h)'}
+                                    </Text>
+                                  </TouchableOpacity>
+                                  {formData.autoFinalizeTime && (
+                                    <TouchableOpacity
+                                      onPress={() => updateFormData('autoFinalizeTime', null)}
+                                      style={{
+                                        backgroundColor: '#334155',
+                                        paddingHorizontal: 16,
+                                        paddingVertical: 15,
+                                        borderRadius: 10
+                                      }}
+                                    >
+                                      <Text style={{ color: '#f87171', fontSize: 13, fontWeight: 'bold' }}>Clear</Text>
+                                    </TouchableOpacity>
+                                  )}
+                                </View>
+                                {showAutoFinalize && (
+                                  <DateTimePicker
+                                    value={formData.autoFinalizeTime || formData.endTime || new Date()}
+                                    mode="time"
+                                    is24Hour={false}
+                                    display="default"
+                                    onChange={(e, t) => handleTimeChange(e, t, 'autoFinalize')}
+                                  />
+                                )}
                               </View>
 
 

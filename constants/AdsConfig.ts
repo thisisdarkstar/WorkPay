@@ -29,21 +29,42 @@ export const isExpoGo = (): boolean => {
 
 // Official Google Sample / Test Ad Unit IDs
 export const ADMOB_TEST_IDS = {
-  // Official AdMob Android Test Banner ID
+  // Official AdMob Android Test Banner ID (Fixed 320x50)
   ANDROID_BANNER: 'ca-app-pub-3940256099942544/6300978111',
-  // Official AdMob iOS Test Banner ID
+  // Official AdMob Android Test Adaptive Banner ID
+  ANDROID_ADAPTIVE_BANNER: 'ca-app-pub-3940256099942544/9214589741',
+  // Official AdMob Android Test App Open ID
+  ANDROID_APP_OPEN: 'ca-app-pub-3940256099942544/9257395921',
+  // Official AdMob Android Test Interstitial ID
+  ANDROID_INTERSTITIAL: 'ca-app-pub-3940256099942544/1033173712',
+
+  // Official AdMob iOS Test Banner ID (Fixed 320x50)
   IOS_BANNER: 'ca-app-pub-3940256099942544/2934735716',
+  // Official AdMob iOS Test Adaptive Banner ID
+  IOS_ADAPTIVE_BANNER: 'ca-app-pub-3940256099942544/2435281174',
+  // Official AdMob iOS Test App Open ID
+  IOS_APP_OPEN: 'ca-app-pub-3940256099942544/5575463023',
+  // Official AdMob iOS Test Interstitial ID
+  IOS_INTERSTITIAL: 'ca-app-pub-3940256099942544/4411468910',
+
   // Official AdMob Android Test App ID
   ANDROID_APP_ID: 'ca-app-pub-3940256099942544~3347511713',
+  // Official AdMob iOS Test App ID
+  IOS_APP_ID: 'ca-app-pub-3940256099942544~1458002511',
 };
 
 /**
  * Resolves the appropriate Banner Ad Unit ID based on the environment and platform.
  * In development (__DEV__ === true), it ALWAYS returns the safe Google Test ID.
  */
-export const getBannerAdUnitId = (): string => {
+export const getBannerAdUnitId = (isAdaptive: boolean = true): string => {
+  const googleAds = getGoogleMobileAds();
+  const defaultTestId = isAdaptive
+    ? (googleAds?.TestIds?.ADAPTIVE_BANNER || (Platform.OS === 'ios' ? ADMOB_TEST_IDS.IOS_ADAPTIVE_BANNER : ADMOB_TEST_IDS.ANDROID_ADAPTIVE_BANNER))
+    : (googleAds?.TestIds?.BANNER || (Platform.OS === 'ios' ? ADMOB_TEST_IDS.IOS_BANNER : ADMOB_TEST_IDS.ANDROID_BANNER));
+
   if (__DEV__) {
-    return Platform.OS === 'ios' ? ADMOB_TEST_IDS.IOS_BANNER : ADMOB_TEST_IDS.ANDROID_BANNER;
+    return defaultTestId;
   }
 
   // Production Ad Unit ID from environment variable, falling back to test ID if not yet configured
@@ -52,7 +73,49 @@ export const getBannerAdUnitId = (): string => {
     return productionId.trim();
   }
 
-  return Platform.OS === 'ios' ? ADMOB_TEST_IDS.IOS_BANNER : ADMOB_TEST_IDS.ANDROID_BANNER;
+  return defaultTestId;
+};
+
+/**
+ * Resolves the App Open Ad Unit ID.
+ */
+export const getAppOpenAdUnitId = (): string => {
+  const googleAds = getGoogleMobileAds();
+  const defaultTestId =
+    googleAds?.TestIds?.APP_OPEN ||
+    (Platform.OS === 'ios' ? ADMOB_TEST_IDS.IOS_APP_OPEN : ADMOB_TEST_IDS.ANDROID_APP_OPEN);
+
+  if (__DEV__) {
+    return defaultTestId;
+  }
+
+  const productionId = process.env.EXPO_PUBLIC_ADMOB_APP_OPEN_ID;
+  if (productionId && productionId.trim().length > 0) {
+    return productionId.trim();
+  }
+
+  return defaultTestId;
+};
+
+/**
+ * Resolves the Interstitial Ad Unit ID.
+ */
+export const getInterstitialAdUnitId = (): string => {
+  const googleAds = getGoogleMobileAds();
+  const defaultTestId =
+    googleAds?.TestIds?.INTERSTITIAL ||
+    (Platform.OS === 'ios' ? ADMOB_TEST_IDS.IOS_INTERSTITIAL : ADMOB_TEST_IDS.ANDROID_INTERSTITIAL);
+
+  if (__DEV__) {
+    return defaultTestId;
+  }
+
+  const productionId = process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID;
+  if (productionId && productionId.trim().length > 0) {
+    return productionId.trim();
+  }
+
+  return defaultTestId;
 };
 
 /**

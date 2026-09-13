@@ -125,31 +125,203 @@ npm run ios
 
 ---
 
-## 📦 Production Builds (EAS Build)
+## 📢 Google AdMob Setup & Credentials
 
-To generate release APK / AAB packages for distribution:
+The app uses `react-native-google-mobile-ads` to display banner ads. Two types of credentials are required:
 
-1. Install EAS CLI:
+### 1. AdMob App ID (SDK Initialization)
+Required natively by the Google Mobile Ads SDK when the application launches.
+
+- **Locations in Project**:
+  1. `app.json`:
+     ```json
+     [
+       "react-native-google-mobile-ads",
+       {
+         "androidAppId": "ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY",
+         "iosAppId": "ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY",
+         "userTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
+       }
+     ]
+     ```
+  2. `android/app/src/main/AndroidManifest.xml`:
+     ```xml
+     <meta-data
+         android:name="com.google.android.gms.ads.APPLICATION_ID"
+         android:value="ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY"
+         tools:replace="android:value"/>
+     ```
+
+- **Official Google Test App IDs (Safe for Development)**:
+  - **Android**: `ca-app-pub-3940256099942544~3347511713`
+  - **iOS**: `ca-app-pub-3940256099942544~1458002511`
+
+---
+
+### 2. Ad Unit IDs (Banner, App Open, & Interstitial)
+Identifies individual ad units rendered across app flows.
+
+- **Locations in Project**:
+  Define in your `.env` or `.env.local` file:
+  ```env
+  # Google AdMob Banner Ad Unit ID (Display Banners)
+  EXPO_PUBLIC_ADMOB_BANNER_ID="ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ"
+
+  # Google AdMob App Open Ad Unit ID (App Launch / Splash Transition)
+  EXPO_PUBLIC_ADMOB_APP_OPEN_ID="ca-app-pub-XXXXXXXXXXXXXXXX/AAAAAAAAAA"
+
+  # Google AdMob Interstitial Ad Unit ID (Post-Checkout Shift Completion)
+  EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID="ca-app-pub-XXXXXXXXXXXXXXXX/IIIIIIIIII"
+  ```
+
+- **Official Google Test Ad Unit IDs**:
+  - **Banner (320x50)**: `ca-app-pub-3940256099942544/6300978111`
+  - **Adaptive Banner**: `ca-app-pub-3940256099942544/9214589741`
+  - **App Open Ad**: `ca-app-pub-3940256099942544/9257395921`
+  - **Interstitial Ad**: `ca-app-pub-3940256099942544/1033173712`
+
+- **Fallback & Safety Logic (`constants/AdsConfig.ts` & `services/AdService.ts`)**:
+  - In development mode (`__DEV__ === true`), the app **always** loads Google's official test ad units to protect your account from invalid traffic.
+  - In release builds, if any ad unit ID variable is left blank, it safely falls back to test ads rather than crashing.
+  - **App Open Ad**: Fires on app launch / cold-start with in-memory session throttling so users are never spammed.
+  - **Interstitial Ad**: Pre-cached in memory and triggered at the natural workflow completion point right after the attendance checkout API returns success.
+
+> [!WARNING]
+> **AdMob Policy Reminder**: Never click your own live ads or load production ad units on personal devices during development. Doing so will flag invalid traffic and can lead to permanent account suspension. Always verify ad display using test IDs or register your device as a test device in the [Google AdMob Console](https://admob.google.com/).
+
+---
+
+## 🔨 Building the Application
+
+WorkPay can be built locally using Gradle for direct sideloading, or in the cloud using Expo Application Services (EAS).
+
+### Prerequisites for Local Android Builds
+1. **Java Development Kit (JDK)**: JDK 17 or higher installed (`java -version`).
+2. **Android SDK**: Android SDK Platform 34/35 and Command-Line Tools installed via Android Studio.
+3. **Environment Variables**:
+   - `ANDROID_HOME` pointing to your Android SDK directory (e.g., `C:\Users\<username>\AppData\Local\Android\Sdk` on Windows).
+   - `%ANDROID_HOME%\platform-tools` added to system `PATH` (for `adb`).
+4. **SDK Path File**: Ensure `android/local.properties` contains:
+   ```properties
+   sdk.dir=C:\\Users\\<username>\\AppData\\Local\\Android\\Sdk
+   ```
+
+---
+
+### Method A: Local Release APK Build (Recommended for Direct Device Testing)
+
+This method produces a standalone `.apk` file that does not depend on Metro or Expo Go, perfect for sideloading to physical devices or sharing with testers.
+
+#### Step 1: Export and Embed the Offline JavaScript Bundle
+From the project root:
+```bash
+npx expo export:embed --platform android --dev false --entry-file node_modules/expo-router/entry.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/ --reset-cache
+```
+
+#### Step 2: Compile the Release APK with Gradle
+Navigate to the `android` folder and compile:
+
+- **On Windows (PowerShell / CMD)**:
+  ```powershell
+  cd android
+  .\gradlew assembleRelease
+  cd ..
+  ```
+
+- **On macOS / Linux**:
+  ```bash
+  cd android
+  ./gradlew assembleRelease
+  cd ..
+  ```
+
+#### Step 3: Locate the Built APK
+The compiled release APK will be located at:
+```
+android/app/build/outputs/apk/release/app-release.apk
+```
+
+#### Step 4: Install / Sideload via ADB
+Connect your physical phone via USB (with **USB Debugging** enabled in Developer Options):
+```bash
+# Verify device connection
+adb devices
+
+# Install APK directly to connected device
+adb install -r android/app/build/outputs/apk/release/app-release.apk
+```
+
+*(If you get a signature mismatch error `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, uninstall the previous version first: `adb uninstall com.chiranjeebnayak.workPayApp`)*
+
+---
+
+### Method B: Google Play Store Release (AAB - Android App Bundle)
+
+Google Play Store requires an **Android App Bundle (.aab)** for store publication:
+
+```powershell
+cd android
+# On Windows:
+.\gradlew bundleRelease
+
+# On macOS/Linux:
+./gradlew bundleRelease
+cd ..
+```
+
+The resulting bundle is saved at:
+```
+android/app/build/outputs/bundle/release/app-release.aab
+```
+Upload this `.aab` file to Google Play Console under **Internal Testing**, **Closed Testing**, or **Production**.
+
+---
+
+### Method C: Cloud Builds with EAS (Expo Application Services)
+
+If you prefer building in the cloud without configuring local Android SDKs:
+
+1. **Install EAS CLI and Log In**:
    ```bash
    npm install -g eas-cli
    eas login
    ```
-2. Configure your live AdMob App IDs in `app.json`:
-   ```json
-   "react-native-google-mobile-ads": {
-     "androidAppId": "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
-     "iosAppId": "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy"
-   }
-   ```
-3. Set production environment variables in your EAS project dashboard or `.env`:
+
+2. **Configure Production Credentials**:
+   Ensure live `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_ADMOB_BANNER_ID` are set in your EAS secrets or `.env`:
    ```env
-   EXPO_PUBLIC_API_URL="https://api.yourdomain.com"
-   EXPO_PUBLIC_ADMOB_BANNER_ID="ca-app-pub-xxxxxxxxxxxxxxxx/zzzzzzzzzz"
+   EXPO_PUBLIC_API_URL="https://work-pay-service.vercel.app"
+   EXPO_PUBLIC_ADMOB_BANNER_ID="ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ"
    ```
-4. Trigger the build:
-   ```bash
-   eas build --platform android --profile production
-   ```
+
+3. **Trigger Cloud Builds**:
+   - **Generate Standalone Testing APK**:
+     ```bash
+     eas build --platform android --profile preview
+     ```
+   - **Generate Google Play Store App Bundle (AAB)**:
+     ```bash
+     eas build --platform android --profile production
+     ```
+
+---
+
+### 🧹 Build Maintenance & Clean Commands
+
+If you ever encounter build cache errors, out-of-memory errors, or stale native dependencies:
+
+```powershell
+# Stop any stuck Gradle daemons
+cd android
+.\gradlew --stop
+
+# Clean build artifacts
+.\gradlew clean
+cd ..
+
+# Clear Metro / Expo bundler cache
+npx expo start -c
+```
 
 ---
 

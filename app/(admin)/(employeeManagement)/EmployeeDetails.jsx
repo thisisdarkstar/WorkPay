@@ -45,12 +45,13 @@ const months = [
 ];
 
  const calculateMonthTotals = (transactions) => {
-    if (!Array.isArray(transactions)) return { overtime: 0, deduction: 0, advance: 0 };
+    if (!Array.isArray(transactions)) return { overtime: 0, bonus: 0, deduction: 0, advance: 0 };
     const overtime = transactions.reduce((acc, it) => acc + (it?.payType === "OVERTIME" ? (Number(it?.amount) || 0) : 0), 0);
+    const bonus = transactions.reduce((acc, it) => acc + (it?.payType === "BONUS" ? (Number(it?.amount) || 0) : 0), 0);
     const deduction = transactions.reduce((acc, it) => acc + (it?.payType === "DEDUCTION" ? (Number(it?.amount) || 0) : 0), 0);
     const advance = transactions.reduce((acc, it) => acc + (it?.payType === "ADVANCE" ? (Number(it?.amount) || 0) : 0), 0);
     
-    return { overtime, deduction, advance };
+    return { overtime, bonus, deduction, advance };
   };
 
 function EmployeeDetails() {
@@ -237,7 +238,7 @@ useEffect(()=>{
   const renderPaymentCard = ({ item }) => {
     const totals = calculateMonthTotals(item?.transactions || []);
     const baseSalary = Number(paymentsData?.baseSalary) || 0;
-    const netSalary = baseSalary + totals.overtime - totals.deduction - totals.advance;
+    const netSalary = baseSalary + totals.overtime + totals.bonus - totals.deduction - totals.advance;
     const salaryTx = Array.isArray(item?.transactions) ? item.transactions.find(i => i?.payType === "SALARY") : null;
 
     return (
@@ -254,6 +255,10 @@ useEffect(()=>{
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Overtime</Text>
             <Text style={[styles.paymentAmount, { color: '#7ED321' }]}>+ ₹{totals.overtime}</Text>
+          </View>
+          <View style={styles.paymentRow}>
+            <Text style={styles.paymentLabel}>Bonus</Text>
+            <Text style={[styles.paymentAmount, { color: '#10B981' }]}>+ ₹{totals.bonus}</Text>
           </View>
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Deductions</Text>
