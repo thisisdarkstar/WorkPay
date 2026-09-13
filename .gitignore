@@ -42,6 +42,11 @@ ios/*.xcuserdata/
 *.key
 *.keystore
 *.mobileprovision
+*.der
+extracted_keystore/
+*keystore*.zip
+@*keystore*
+temp_so_check/
 
 # Metro
 .metro-health-check*
