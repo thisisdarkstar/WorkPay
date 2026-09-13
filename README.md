@@ -191,89 +191,111 @@ Identifies individual ad units rendered across app flows.
 
 ---
 
-## 🔨 Building the Application
+## 🔨 Building & Deploying the Application
 
-WorkPay can be built locally using Gradle for direct sideloading, or in the cloud using Expo Application Services (EAS).
-
-### Prerequisites for Local Android Builds
-1. **Java Development Kit (JDK)**: JDK 17 or higher installed (`java -version`).
-2. **Android SDK**: Android SDK Platform 34/35 and Command-Line Tools installed via Android Studio.
-3. **Environment Variables**:
-   - `ANDROID_HOME` pointing to your Android SDK directory (e.g., `C:\Users\<username>\AppData\Local\Android\Sdk` on Windows).
-   - `%ANDROID_HOME%\platform-tools` added to system `PATH` (for `adb`).
-4. **SDK Path File**: Ensure `android/local.properties` contains:
-   ```properties
-   sdk.dir=C:\\Users\\<username>\\AppData\\Local\\Android\\Sdk
-   ```
+WorkPay can be built locally using Gradle for direct sideloading (`.apk`) or for Google Play Store publication (`.aab`).
 
 ---
 
-### Method A: Local Release APK Build (Recommended for Direct Device Testing)
+### ⚡ Quick Copy-Paste One-Liners (PowerShell on Windows)
 
-This method produces a standalone `.apk` file that does not depend on Metro or Expo Go, perfect for sideloading to physical devices or sharing with testers.
-
-#### Step 1: Export and Embed the Offline JavaScript Bundle
-From the project root:
-```bash
-npx expo export:embed --platform android --dev false --entry-file node_modules/expo-router/entry.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/ --reset-cache
-```
-
-#### Step 2: Compile the Release APK with Gradle
-Navigate to the `android` folder and compile:
-
-- **On Windows (PowerShell / CMD)**:
-  ```powershell
-  cd android
-  .\gradlew assembleRelease
-  cd ..
-  ```
-
-- **On macOS / Linux**:
-  ```bash
-  cd android
-  ./gradlew assembleRelease
-  cd ..
-  ```
-
-#### Step 3: Locate the Built APK
-The compiled release APK will be located at:
-```
-android/app/build/outputs/apk/release/app-release.apk
-```
-
-#### Step 4: Install / Sideload via ADB
-Connect your physical phone via USB (with **USB Debugging** enabled in Developer Options):
-```bash
-# Verify device connection
-adb devices
-
-# Install APK directly to connected device
-adb install -r android/app/build/outputs/apk/release/app-release.apk
-```
-
-*(If you get a signature mismatch error `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, uninstall the previous version first: `adb uninstall com.chiranjeebnayak.workPayApp`)*
-
----
-
-### Method B: Google Play Store Release (AAB - Android App Bundle)
-
-Google Play Store requires an **Android App Bundle (.aab)** for store publication:
+#### 1. Build Standalone Release APK & Install Directly to Phone
+Runs the offline bundle export with cache reset, builds the native release APK, and streams it to your connected device via ADB:
 
 ```powershell
-cd android
-# On Windows:
-.\gradlew bundleRelease
-
-# On macOS/Linux:
-./gradlew bundleRelease
-cd ..
+npx expo export:embed --platform android --dev false --entry-file node_modules/expo-router/entry.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/ --reset-cache; cd android; .\gradlew assembleRelease; cd ..; adb install -r android/app/build/outputs/apk/release/app-release.apk
 ```
 
-The resulting bundle is saved at:
+#### 2. Build Google Play Store Android App Bundle (.aab)
+Exports the production offline bundle with cache reset and compiles the signed release App Bundle required by Google Play Console:
+
+```powershell
+npx expo export:embed --platform android --dev false --entry-file node_modules/expo-router/entry.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/ --reset-cache; cd android; .\gradlew bundleRelease; cd ..
 ```
-android/app/build/outputs/bundle/release/app-release.aab
-```
-Upload this `.aab` file to Google Play Console under **Internal Testing**, **Closed Testing**, or **Production**.
+
+---
+
+### 📋 Step-by-Step Breakdown
+
+#### Method A: Local Release APK (Direct Device Testing & Sideloading)
+
+This produces a standalone, production-mode `.apk` that runs independently of Metro or dev servers:
+
+1. **Export and Embed the Offline JavaScript Bundle**:
+   ```bash
+   npx expo export:embed --platform android --dev false --entry-file node_modules/expo-router/entry.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/ --reset-cache
+   ```
+   - `--dev false`: Compiles production-optimized code with Hermes bytecode compilation and removes development warnings.
+   - `--reset-cache`: Clears Metro bundler cache and re-evaluates all `.env` and `.env.local` variables.
+   - Outputs the bundle to `android/app/src/main/assets/index.android.bundle` and static assets to `android/app/src/main/res/`.
+
+2. **Compile the Release APK with Gradle**:
+   ```powershell
+   cd android
+   .\gradlew assembleRelease
+   cd ..
+   ```
+   The compiled APK will be at:
+   ```
+   android/app/build/outputs/apk/release/app-release.apk
+   ```
+
+3. **Install to Physical Device via ADB**:
+   Connect your Android phone via USB (with **USB Debugging** enabled in Developer Options):
+   ```bash
+   adb install -r android/app/build/outputs/apk/release/app-release.apk
+   ```
+   *(Note: If you get `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, uninstall the previous version: `adb uninstall com.chiranjeebnayak.workPayApp`)*
+
+---
+
+#### Method B: Google Play Store Release (AAB - Android App Bundle)
+
+Google Play Store requires an **Android App Bundle (.aab)** format:
+
+1. **Export and Embed the Offline JavaScript Bundle**:
+   ```bash
+   npx expo export:embed --platform android --dev false --entry-file node_modules/expo-router/entry.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/ --reset-cache
+   ```
+
+2. **Compile the Signed Release App Bundle**:
+   - **On Windows**:
+     ```powershell
+     cd android
+     .\gradlew bundleRelease
+     cd ..
+     ```
+   - **On macOS / Linux**:
+     ```bash
+     cd android
+     ./gradlew bundleRelease
+     cd ..
+     ```
+
+3. **Locate the Output Bundle**:
+   The production `.aab` file will be generated at:
+   ```
+   android/app/build/outputs/bundle/release/app-release.aab
+   ```
+
+4. **Upload to Google Play Console**:
+   - Open your [Google Play Console](https://play.google.com/console/).
+   - Select your application &rarr; **Production** (or **Internal / Closed Testing**).
+   - Click **Create new release**.
+   - Drag and drop `android/app/build/outputs/bundle/release/app-release.aab`.
+   - Add your release notes and click **Save & Review release**.
+
+> [!TIP]
+> **Version Code Increment Before Each Play Store Update**:
+> Every time you upload a new release to Google Play, increment the version code in `app.json`:
+> ```json
+> "versionCode": 10
+> ```
+> and in `android/app/build.gradle`:
+> ```groovy
+> versionCode 10
+> versionName "1.0.0"
+> ```
 
 ---
 

@@ -72,4 +72,8 @@ ehthumbs.db
 # TypeScript
 *.tsbuildinfo
 
+# Android Release binaries
+*.apk
+*.aab
+
 app-example
