@@ -3,8 +3,8 @@ import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import axios from 'axios';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
@@ -110,9 +110,14 @@ function Dashboard() {
     }
   }
 
-  useEffect(() => {
-    dashboardDetails('all');
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      dashboardDetails(currentOffice);
+      if (currentOffice !== 'all') {
+        checkAttendanceFinalization(currentOffice);
+      }
+    }, [currentOffice])
+  );
   
   const stats = [
     { icon: 'user', iconSet: 'AntDesign', color: '#4A9EFF', label: 'Total Employees',field:"totalEmployees" },
@@ -204,6 +209,41 @@ function Dashboard() {
             </View>
           )}
 
+          {/* Quick alert banner for pending leaves */}
+          {Array.isArray(data?.pendingLeaves) && data.pendingLeaves.length > 0 && (
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              onPress={() => router.push({ pathname: '/LeaveRequests', params: { id: currentOffice } })}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: 'rgba(255, 184, 0, 0.12)',
+                borderWidth: 1,
+                borderColor: '#FFB800',
+                padding: 12,
+                borderRadius: 10,
+                marginBottom: 16
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <MaterialIcons name="notification-important" size={24} color="#FFB800" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700' }}>
+                    {data.pendingLeaves.length} Pending Leave Request{data.pendingLeaves.length > 1 ? 's' : ''}
+                  </Text>
+                  <Text style={{ color: '#E2E8F0', fontSize: 13, marginTop: 2 }}>
+                    Action required to approve or reject
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ color: '#FFB800', fontSize: 13, fontWeight: '600' }}>Review</Text>
+                <AntDesign name="right" size={14} color="#FFB800" />
+              </View>
+            </TouchableOpacity>
+          )}
+
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Overview</Text>
             {currentOffice !== "all" &&
@@ -247,21 +287,23 @@ function Dashboard() {
             {stats.map((stat, index) => (
              currentOffice === "all" ? ( stat.field !== "totalLate" &&  <TouchableOpacity
                onPress={() =>{
-                if(stat.field !== "totalEmployees")
-                router.push({ pathname: '/AttendanceStatus', params: { id: currentOffice, status: stat.status, officeName: currentOffice === 'all' ? 'All Branches' : (data?.offices?.find(office => office?.id === currentOffice)?.name || 'Office') } })
+                if(stat.field === "totalEmployees") {
+                  router.push({ pathname: '/(admin)/(employeeManagement)/EmployeeManagement', params: { officeId: currentOffice } });
+                } else {
+                  router.push({ pathname: '/AttendanceStatus', params: { id: currentOffice, status: stat.status, officeName: currentOffice === 'all' ? 'All Branches' : (data?.offices?.find(office => office?.id === currentOffice)?.name || 'Office') } });
+                }
                }
               }
               key={index} style={styles.card}>
 
-            {stat.field !== "totalEmployees" &&  
-              <AntDesign name="right" size={16}  style={{position:"absolute",top:5,right:10}}  color="#4A9EFF" />}
+              <AntDesign name="right" size={16}  style={{position:"absolute",top:5,right:10}}  color="#4A9EFF" />
 
                 <View style={styles.cardContent}>
                   <View style={[styles.iconContainer, { backgroundColor: `${stat.color}20` }]}>
                     {renderIcon(stat.icon, stat.iconSet, stat.color)}
                   </View>
                   <View style={styles.cardText}>
-                    <Text style={styles.cardCount}>{stat.field === "totalPresent" ? (data?.["totalLate"] + data?.["totalPresent"]) : data?.[stat.field]}</Text>
+                    <Text style={styles.cardCount}>{stat.field === "totalPresent" ? ((data?.["totalLate"] || 0) + (data?.["totalPresent"] || 0)) : (data?.[stat.field] ?? 0)}</Text>
                     <Text style={styles.cardLabel}>{stat.label}</Text>
                   </View>
                 </View>
@@ -269,20 +311,22 @@ function Dashboard() {
               </TouchableOpacity> ) : (
                  <TouchableOpacity
                   onPress={() =>{
-                    if(stat.field !== "totalEmployees")
-                    router.push({ pathname: '/AttendanceStatus', params: { id: currentOffice, status: stat.status, officeName: data?.offices?.find(office => office?.id === currentOffice)?.name || 'Office' } })
+                    if(stat.field === "totalEmployees") {
+                      router.push({ pathname: '/(admin)/(employeeManagement)/EmployeeManagement', params: { officeId: currentOffice } });
+                    } else {
+                      router.push({ pathname: '/AttendanceStatus', params: { id: currentOffice, status: stat.status, officeName: data?.offices?.find(office => office?.id === currentOffice)?.name || 'Office' } });
+                    }
                   }
                   }
                   key={index} style={styles.card}>
-                    {stat.field !== "totalEmployees" &&  
-              <AntDesign name="right" size={16} style={{position:"absolute",top:5,right:10}} color="#4A9EFF" />}
+                  <AntDesign name="right" size={16} style={{position:"absolute",top:5,right:10}} color="#4A9EFF" />
 
                 <View style={styles.cardContent}>
                   <View style={[styles.iconContainer, { backgroundColor: `${stat.color}20` }]}>
                     {renderIcon(stat.icon, stat.iconSet, stat.color)}
                   </View>
                   <View style={styles.cardText}>
-                    <Text style={styles.cardCount}>{stat.field === "totalPresent" ? (data?.["totalPresent"] ?? 0) : (data?.[stat.field] ?? 0)}</Text>
+                    <Text style={styles.cardCount}>{stat.field === "totalPresent" ? ((data?.["totalPresent"] || 0) + (data?.["totalLate"] || 0)) : (data?.[stat.field] ?? 0)}</Text>
                     <Text style={styles.cardLabel}>{stat.label}</Text>
                   </View>
                 </View>
@@ -312,31 +356,44 @@ function Dashboard() {
         </View>}
 
         {/* Leave Requests Section */}
-       {currentOffice !== "all" && <View style={styles.sectionContainer}>
+        <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Leave Requests</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={styles.sectionTitle}>Leave Requests</Text>
+              {Array.isArray(data?.pendingLeaves) && data.pendingLeaves.length > 0 && (
+                <View style={{ backgroundColor: '#FFB800', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                  <Text style={{ color: '#111827', fontSize: 12, fontWeight: '700' }}>{data.pendingLeaves.length}</Text>
+                </View>
+              )}
+            </View>
             <TouchableOpacity 
-              onPress={() =>router.push({ pathname: '/LeaveRequests', params: { id: currentOffice } })}
+              onPress={() => router.push({ pathname: '/LeaveRequests', params: { id: currentOffice } })}
               style={styles.viewAllButton}
             >
               <Text style={styles.viewAllText}>View All</Text>
               <AntDesign name="right" size={16} color="#4A9EFF" />
             </TouchableOpacity>
           </View>
-         {data?.pendingLeaves?.length > 0 && <View style={styles.recentActivityContainer}>
-            {data?.pendingLeaves.map((request, index) => (
-              <View key={index} style={styles.recentActivityItem}>
-                <View style={{gap:5, flex: 1}}>
-                  <Text style={{color:'#FFFFFF',fontSize:18}}>{request.employee.name}</Text>
-                  <Text style={{color:'#8A9BAE',fontSize:14}}>{request.type} • {formatDay(request.fromDate) }- { formatDay(request.toDate)}</Text>
+          {Array.isArray(data?.pendingLeaves) && data.pendingLeaves.length > 0 ? (
+            <View style={styles.recentActivityContainer}>
+              {data.pendingLeaves.map((request, index) => (
+                <View key={request.id || index} style={styles.recentActivityItem}>
+                  <View style={{gap:5, flex: 1}}>
+                    <Text style={{color:'#FFFFFF',fontSize:18}}>{request.employee?.name || "Employee"}</Text>
+                    <Text style={{color:'#8A9BAE',fontSize:14}}>{request.type} • {formatDay(request.fromDate)} - {formatDay(request.toDate)}</Text>
+                  </View>
+                  <View style={{paddingHorizontal:10,paddingVertical:5,borderRadius:8,backgroundColor:'#FFB800',alignItems:'center',justifyContent:'center'}}>
+                    <Text style={{color:'#ffffff',fontSize:14,fontWeight:'600'}}>Pending</Text>
+                  </View>
                 </View>
-                <View style={{paddingHorizontal:10,paddingVertical:5,borderRadius:8,backgroundColor:'#FFB800',alignItems:'center',justifyContent:'center'}}>
-                  <Text style={{color:'#ffffff',fontSize:14,fontWeight:'600'}}>Pending</Text>
-                </View>
-              </View>
-            ))}
-          </View>}
-        </View>}
+              ))}
+            </View>
+          ) : (
+            <View style={{ padding: 18, backgroundColor: '#192633', borderRadius: 10, alignItems: 'center', marginTop: 8 }}>
+              <Text style={{ color: '#8A9BAE', fontSize: 14 }}>No pending leave requests</Text>
+            </View>
+          )}
+        </View>
 
         </ScrollView>
     </SafeAreaView>

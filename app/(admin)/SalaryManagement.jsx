@@ -2,12 +2,13 @@ import Feather from '@expo/vector-icons/Feather'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import axios from 'axios'
-import { useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useFocusEffect, useRouter } from 'expo-router'
+import { useCallback, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
   Modal,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -18,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { url } from '../../constants/EnvValue'
 import { useContextData } from "../../context/EmployeeContext"
+import { useOfficeContextData } from "../../context/OfficeContext"
 import { getApiErrorMessage, getToken } from "../../services/ApiService"
 
 function AdminSalaryManagement() {
@@ -44,6 +46,8 @@ function AdminSalaryManagement() {
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [paymentData,setPaymentData] = useState([]);
   const {showToast} = useContextData();
+  const {officeData} = useOfficeContextData();
+  const [selectedOfficeFilter, setSelectedOfficeFilter] = useState('ALL');
 
 
    const fetchPaymentHistory = async () => {
@@ -65,9 +69,11 @@ function AdminSalaryManagement() {
   };
 
   // Sample data - replace with API calls
-  useEffect(() => {
-    fetchPaymentHistory();
-  }, [selectedMonth, selectedYear]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchPaymentHistory();
+    }, [selectedMonth, selectedYear])
+  );
 
 
     const calculateMonthTotals = (transactions) => {
@@ -135,7 +141,9 @@ function AdminSalaryManagement() {
           empId: targetEmpId,
           amount: finalAmount,
           description: `Salary payment for ${employee.name} of amount ₹${finalAmount.toLocaleString()}`,
-          type: "SALARY"
+          type: "SALARY",
+          month: selectedMonth,
+          year: selectedYear
         },
         {
           headers: {
@@ -192,7 +200,9 @@ function AdminSalaryManagement() {
           empId: targetEmpId,
           amount: advanceAmount,
           description: `Advance payment for ${selectedEmployee?.name || 'Employee'} of amount ${advanceAmount}`,
-          type: "ADVANCE"
+          type: "ADVANCE",
+          month: selectedMonth,
+          year: selectedYear
         },
         {
           headers: {
@@ -232,7 +242,9 @@ function AdminSalaryManagement() {
           empId: targetEmpId,
           amount: Number(bonusAmount),
           description: bonusDescription?.trim() ? bonusDescription.trim() : `Bonus payment for ${selectedEmployee?.name || 'Employee'}`,
-          type: "BONUS"
+          type: "BONUS",
+          month: selectedMonth,
+          year: selectedYear
         },
         {
           headers: {
@@ -274,7 +286,9 @@ function AdminSalaryManagement() {
           empId: targetEmpId,
           amount: deductionAmount,
           description: deductionDescription,
-          type: "DEDUCTION"
+          type: "DEDUCTION",
+          month: selectedMonth,
+          year: selectedYear
         },
         {
           headers: {
@@ -308,7 +322,9 @@ function AdminSalaryManagement() {
   const renderEmployeeCard = ({ item }) => {
     const totals = calculateMonthTotals(item?.transactions);
     const base = Number(item?.baseSalary) || 0;
-    const isPaid = Array.isArray(item?.transactions) && item.transactions.some(i => i?.payType === "SALARY");
+    const isPaid = item?.isPaid !== undefined 
+      ? !!item.isPaid 
+      : (Array.isArray(item?.transactions) && item.transactions.some(i => i?.payType === "SALARY"));
 
     return (
       <View style={styles.employeeCard}>
@@ -322,7 +338,21 @@ function AdminSalaryManagement() {
           </View>
           <View style={styles.employeeBasicInfo}>
             <Text style={styles.employeeName}>{item?.name || 'Employee'}</Text>
-            <Text style={styles.employeePhone}>{item?.phone || ''}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+              <Text style={styles.employeePhone}>{item?.phone || ''}</Text>
+              {item?.officeName && (
+                <View style={styles.officeBadge}>
+                  <Feather name="map-pin" size={10} color="#4A9EFF" />
+                  <Text style={styles.officeBadgeText}>{item.officeName}</Text>
+                </View>
+              )}
+              {item?.joinedDate && (
+                <View style={[styles.officeBadge, { backgroundColor: 'rgba(255, 255, 255, 0.06)' }]}>
+                  <Feather name="calendar" size={10} color="#8A9BAE" />
+                  <Text style={[styles.officeBadgeText, { color: '#8A9BAE' }]}>Joined: {item.joinedDate}</Text>
+                </View>
+              )}
+            </View>
           </View>
         </TouchableOpacity>
 
@@ -369,8 +399,8 @@ function AdminSalaryManagement() {
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
-          {/* Current Month - Settle Salary */}
-          {!isPaid && isCurrentMonth() && (
+          {/* Settle Salary button - available when not yet paid */}
+          {!isPaid && (
             <TouchableOpacity
               style={styles.settleButton}
               onPress={() => handleSettleSalary(item)}
@@ -381,7 +411,7 @@ function AdminSalaryManagement() {
           )}
           
           {/* Advance, Deduction & Bonus - In the same row */}
-          {!isPaid && isCurrentMonth() && (
+          {!isPaid && (
             <View style={styles.secondaryActionsRow}>
               <TouchableOpacity
                 style={styles.advanceButton}
@@ -493,9 +523,68 @@ function AdminSalaryManagement() {
         </View>
       </View>
 
+      {/* Branch / Office Filter Chips */}
+      {Array.isArray(officeData) && officeData.length > 0 && (
+        <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setSelectedOfficeFilter('ALL')}
+              style={[
+                styles.branchChip,
+                (selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all') && styles.branchChipActive
+              ]}
+            >
+              <Feather 
+                name="grid" 
+                size={13} 
+                color={(selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all') ? '#FFFFFF' : '#8A9BAE'} 
+              />
+              <Text style={[
+                styles.branchChipText,
+                (selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all') && styles.branchChipTextActive
+              ]}>
+                All Branches
+              </Text>
+            </TouchableOpacity>
+
+            {officeData.map(office => (
+              <TouchableOpacity
+                key={office.id}
+                onPress={() => setSelectedOfficeFilter(office.id)}
+                style={[
+                  styles.branchChip,
+                  (selectedOfficeFilter === office.id || selectedOfficeFilter === String(office.id)) && styles.branchChipActive
+                ]}
+              >
+                <Feather 
+                  name="map-pin" 
+                  size={13} 
+                  color={(selectedOfficeFilter === office.id || selectedOfficeFilter === String(office.id)) ? '#FFFFFF' : '#8A9BAE'} 
+                />
+                <Text style={[
+                  styles.branchChipText,
+                  (selectedOfficeFilter === office.id || selectedOfficeFilter === String(office.id)) && styles.branchChipTextActive
+                ]}>
+                  {office.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Employee List */}
       <FlatList
-        data={paymentData || []}
+        data={
+          Array.isArray(paymentData)
+            ? paymentData.filter(item => {
+                if (!selectedOfficeFilter || selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all') {
+                  return true;
+                }
+                return item.officeId === Number(selectedOfficeFilter);
+              })
+            : []
+        }
         keyExtractor={(item) => item?.empId?.toString() || item?.id?.toString() || Math.random().toString()}
         contentContainerStyle={styles.listContent}
         renderItem={renderEmployeeCard}
@@ -1251,6 +1340,44 @@ const styles = StyleSheet.create({
   detailsButtonText: {
     color: '#8A9BAE',
     fontSize: 12,
+    fontWeight: '500',
+  },
+  branchChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#192633',
+    borderWidth: 1,
+    borderColor: '#2A3441',
+  },
+  branchChipActive: {
+    backgroundColor: '#4A90E2',
+    borderColor: '#4A90E2',
+  },
+  branchChipText: {
+    fontSize: 13,
+    color: '#8A9BAE',
+    fontWeight: '500',
+  },
+  branchChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  officeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(74, 158, 255, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  officeBadgeText: {
+    fontSize: 11,
+    color: '#4A9EFF',
     fontWeight: '500',
   },
 })

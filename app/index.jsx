@@ -2,7 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import axios from 'axios';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -29,8 +29,34 @@ function IndexScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const scrollViewRef = useRef(null);
   const router = useRouter();
   const { showToast } = useContextData();
+
+  // Auto-scroll when keyboard opens on Android/iOS
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setIsKeyboardVisible(true);
+        setTimeout(() => {
+          scrollViewRef.current?.scrollTo({ y: 120, animated: true });
+        }, 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setIsKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Check for active, unexpired session on app startup
   useEffect(() => {
@@ -188,21 +214,22 @@ function IndexScreen() {
         <View style={styles.backgroundGradient} />
 
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          ref={scrollViewRef}
+          contentContainerStyle={[styles.scrollContent, isKeyboardVisible && { paddingBottom: 180, paddingTop: 12 }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
           {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Image source={require('../assets/images/icon.png')} style={styles.logo} contentFit="contain" />
+          <View style={[styles.header, isKeyboardVisible && { marginBottom: 14 }]}>
+            <View style={[styles.logoContainer, isKeyboardVisible && { marginBottom: 8 }]}>
+              <Image source={require('../assets/images/icon.png')} style={[styles.logo, isKeyboardVisible && { width: 50, height: 50 }]} contentFit="contain" />
             </View>
-            <Text style={styles.title}>WorkPay</Text>
-            <Text style={styles.subtitle}>by SANGHARSH GROUP</Text>
+            <Text style={[styles.title, isKeyboardVisible && { fontSize: 24, marginBottom: 2 }]}>WorkPay</Text>
+            <Text style={[styles.subtitle, isKeyboardVisible && { fontSize: 13 }]}>by SANGHARSH GROUP</Text>
           </View>
 
       {/* Main Card */}
-      <View style={styles.mainCard}>
+      <View style={[styles.mainCard, isKeyboardVisible && { paddingVertical: 18 }]}>
         {/* Toggle */}
         <View style={styles.toggleContainer}>
           <TouchableOpacity

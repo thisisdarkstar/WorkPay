@@ -3,8 +3,8 @@ import Feather from '@expo/vector-icons/Feather';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import axios from 'axios';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -28,6 +28,7 @@ import { getApiErrorMessage, getToken } from '../../../services/ApiService';
 
 function EmployeeManagement() {
   const router = useRouter();
+  const { officeId: routeOfficeId } = useLocalSearchParams();
   const [employees, setEmployees] = useState([]);
   const [filteredEmployees, setFilteredEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -40,6 +41,13 @@ function EmployeeManagement() {
   const {officeData} = useOfficeContextData();
   const [showOfficeList, setShowOfficeList] = useState(false);
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'ACTIVE', 'INACTIVE'
+  const [selectedOfficeFilter, setSelectedOfficeFilter] = useState(routeOfficeId || 'ALL');
+
+  useEffect(() => {
+    if (routeOfficeId) {
+      setSelectedOfficeFilter(routeOfficeId);
+    }
+  }, [routeOfficeId]);
 
   // Reset password states
   const [resetModalVisible, setResetModalVisible] = useState(false);
@@ -283,14 +291,21 @@ function EmployeeManagement() {
     }
   };
 
-  // Sample data - replace with API call
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchEmployees();
+    }, [])
+  );
 
   // Search and filter functionality
   useEffect(() => {
     let filtered = employees;
+
+    // Apply office filter
+    if (selectedOfficeFilter && selectedOfficeFilter !== 'ALL' && selectedOfficeFilter !== 'all') {
+      const targetOfficeNum = Number(selectedOfficeFilter);
+      filtered = filtered.filter(employee => employee.officeId === targetOfficeNum || employee.office?.id === targetOfficeNum);
+    }
 
     // Apply status filter
     if (statusFilter !== 'ALL') {
@@ -306,7 +321,7 @@ function EmployeeManagement() {
     }
 
     setFilteredEmployees(filtered);
-  }, [searchQuery, employees, statusFilter]);
+  }, [searchQuery, employees, statusFilter, selectedOfficeFilter]);
 
   const resetForm = () => {
     setFormData({
@@ -409,7 +424,15 @@ function EmployeeManagement() {
           </View>
           <View style={styles.employeeDetails}>
             <Text style={styles.employeeName}>{item?.name || 'Employee'}</Text>
-            <Text style={styles.employeePhone}>{item?.phone || ''}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+              <Text style={styles.employeePhone}>{item?.phone || ''}</Text>
+              {item?.office?.name && (
+                <View style={styles.officeBadge}>
+                  <Feather name="map-pin" size={10} color="#4A9EFF" />
+                  <Text style={styles.officeBadgeText}>{item.office.name}</Text>
+                </View>
+              )}
+            </View>
           </View>
         {statusFilter ===  "ALL" &&  <View style={{marginLeft: 'auto',borderRadius: 4,backgroundColor: item?.status === 'ACTIVE' ? '#4CAF50' : '#F97316',paddingHorizontal: 8,paddingVertical: 2,alignSelf: 'flex-start',}}>
                 <Text style={[styles.employeeRole,{color:"#ffffff",fontWeight:"bold"}]}>{item?.status || 'UNKNOWN'}</Text>
@@ -487,50 +510,107 @@ function EmployeeManagement() {
         </TouchableOpacity>
       </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchWrapper}>
-          <Feather name="search" size={20} color="#8A9BAE" style={styles.searchIcon} />
-          <TextInput 
-            placeholder="Search employees..." 
-            placeholderTextColor="#8A9BAE" 
-            style={styles.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+      {/* Control Deck: Search, Branch Selector & Status Tabs */}
+      <View style={styles.controlDeck}>
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchWrapper}>
+            <Feather name="search" size={20} color="#8A9BAE" style={styles.searchIcon} />
+            <TextInput 
+              placeholder="Search employees..." 
+              placeholderTextColor="#8A9BAE" 
+              style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </View>
         </View>
-      </View>
 
-      {/* Filter Buttons */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity 
-          style={[styles.filterButton, statusFilter === 'ALL' && styles.filterButtonActive]}
-          onPress={() => setStatusFilter('ALL')}
-        >
-          <Text style={[styles.filterButtonText, statusFilter === 'ALL' && styles.filterButtonTextActive]}>
-            All ({employees.length})
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.filterButton, statusFilter === 'ACTIVE' && styles.filterButtonActive]}
-          onPress={() => setStatusFilter('ACTIVE')}
-        >
-          <View style={[styles.statusDot, { backgroundColor: '#4CAF50' }]} />
-          <Text style={[styles.filterButtonText, statusFilter === 'ACTIVE' && styles.filterButtonTextActive]}>
-            Active ({employees.filter(e => e.status === 'ACTIVE').length})
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.filterButton, statusFilter === 'INACTIVE' && styles.filterButtonActive]}
-          onPress={() => setStatusFilter('INACTIVE')}
-        >
-          <View style={[styles.statusDot, { backgroundColor: '#F97316' }]} />
-          <Text style={[styles.filterButtonText, statusFilter === 'INACTIVE' && styles.filterButtonTextActive]}>
-            Inactive ({employees.filter(e => e.status === 'INACTIVE').length})
-          </Text>
-        </TouchableOpacity>
+        {/* Branch / Office Filter Chips */}
+        {Array.isArray(officeData) && officeData.length > 0 && (
+          <View style={styles.branchChipsContainer}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              contentContainerStyle={styles.branchChipsScroll}
+            >
+              <TouchableOpacity
+                onPress={() => setSelectedOfficeFilter('ALL')}
+                style={[
+                  styles.branchChip,
+                  (selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all') && styles.branchChipActive
+                ]}
+              >
+                <Feather 
+                  name="grid" 
+                  size={13} 
+                  color={(selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all') ? '#FFFFFF' : '#8A9BAE'} 
+                />
+                <Text style={[
+                  styles.branchChipText,
+                  (selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all') && styles.branchChipTextActive
+                ]}>
+                  All Branches
+                </Text>
+              </TouchableOpacity>
+
+              {officeData.map(office => (
+                <TouchableOpacity
+                  key={office.id}
+                  onPress={() => setSelectedOfficeFilter(office.id)}
+                  style={[
+                    styles.branchChip,
+                    (selectedOfficeFilter === office.id || selectedOfficeFilter === String(office.id)) && styles.branchChipActive
+                  ]}
+                >
+                  <Feather 
+                    name="map-pin" 
+                    size={13} 
+                    color={(selectedOfficeFilter === office.id || selectedOfficeFilter === String(office.id)) ? '#FFFFFF' : '#8A9BAE'} 
+                  />
+                  <Text style={[
+                    styles.branchChipText,
+                    (selectedOfficeFilter === office.id || selectedOfficeFilter === String(office.id)) && styles.branchChipTextActive
+                  ]}>
+                    {office.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Filter Buttons */}
+        <View style={styles.filterContainer}>
+          <TouchableOpacity 
+            style={[styles.filterButton, statusFilter === 'ALL' && styles.filterButtonActive]}
+            onPress={() => setStatusFilter('ALL')}
+          >
+            <Text style={[styles.filterButtonText, statusFilter === 'ALL' && styles.filterButtonTextActive]}>
+              All ({employees.filter(e => (selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all' || e.officeId === Number(selectedOfficeFilter) || e.office?.id === Number(selectedOfficeFilter))).length})
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.filterButton, statusFilter === 'ACTIVE' && styles.filterButtonActive]}
+            onPress={() => setStatusFilter('ACTIVE')}
+          >
+            <View style={[styles.statusDot, { backgroundColor: '#4CAF50' }]} />
+            <Text style={[styles.filterButtonText, statusFilter === 'ACTIVE' && styles.filterButtonTextActive]}>
+              Active ({employees.filter(e => e.status === 'ACTIVE' && (selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all' || e.officeId === Number(selectedOfficeFilter) || e.office?.id === Number(selectedOfficeFilter))).length})
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.filterButton, statusFilter === 'INACTIVE' && styles.filterButtonActive]}
+            onPress={() => setStatusFilter('INACTIVE')}
+          >
+            <View style={[styles.statusDot, { backgroundColor: '#F97316' }]} />
+            <Text style={[styles.filterButtonText, statusFilter === 'INACTIVE' && styles.filterButtonTextActive]}>
+              Inactive ({employees.filter(e => e.status === 'INACTIVE' && (selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all' || e.officeId === Number(selectedOfficeFilter) || e.office?.id === Number(selectedOfficeFilter))).length})
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Employee List */}
@@ -977,11 +1057,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  searchContainer: {
-    padding: 16,
+  controlDeck: {
     backgroundColor: '#192633',
     borderBottomWidth: 1,
     borderBottomColor: '#2A3441',
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   searchWrapper: {
     flexDirection: 'row',
@@ -989,7 +1073,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#111a22',
     borderRadius: 8,
     paddingHorizontal: 12,
-    height: 40,
+    height: 42,
+    borderWidth: 1,
+    borderColor: '#2A3441',
   },
   searchIcon: {
     marginRight: 8,
@@ -997,13 +1083,19 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
+  },
+  branchChipsContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  branchChipsScroll: {
+    gap: 8,
   },
   filterContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#192633',
+    paddingBottom: 12,
     gap: 8,
   },
   filterButton: {
@@ -1012,7 +1104,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     borderRadius: 8,
     backgroundColor: '#111a22',
     borderWidth: 1,
@@ -1030,6 +1122,7 @@ const styles = StyleSheet.create({
   },
   filterButtonTextActive: {
     color: '#FFFFFF',
+    fontWeight: '600',
   },
   statusDot: {
     width: 8,
@@ -1509,5 +1602,43 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
+  },
+  branchChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#111a22',
+    borderWidth: 1,
+    borderColor: '#2A3441',
+  },
+  branchChipActive: {
+    backgroundColor: '#4A90E2',
+    borderColor: '#4A90E2',
+  },
+  branchChipText: {
+    fontSize: 13,
+    color: '#8A9BAE',
+    fontWeight: '500',
+  },
+  branchChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  officeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(74, 158, 255, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  officeBadgeText: {
+    fontSize: 11,
+    color: '#4A9EFF',
+    fontWeight: '500',
   },
 });

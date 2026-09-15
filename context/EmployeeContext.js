@@ -2,7 +2,7 @@
 import AntDesign from '@expo/vector-icons/AntDesign';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text } from 'react-native';
+import { Animated, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 const defaultContext = {
   employeeData: {},
   setEmployeeData: () => {},
@@ -56,34 +56,61 @@ export const EmployeeProvider = ({ children }) => {
     }, 3000);
   }, [opacity]);
 
+  const dismissToast = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    Animated.timing(opacity, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => setToast({ visible: false, message: '', type: '' }));
+  }, [opacity]);
+
   return (
     <AppContext.Provider value={{ employeeData, setEmployeeData, showToast }}>
       {children}
-      {toast.visible && (
-        <Animated.View
-          style={[
-            styles.toast,
-            {
-              opacity,
-              backgroundColor:
-                toast.type === "Success"
-                  ? "#2ecc71"
-                  : toast.type === "Warning"
-                  ? "#f39c12"
-                  : "#e74c3c"
-            }
-          ]}
-        >
-          {toast.type === "Success" ? (
-            <AntDesign name="checkcircleo" size={24} color="white" />
-          ) : toast.type === "Warning" ? (
-            <AntDesign name="warning" size={24} color="white" />
-          ) : (
-            <MaterialIcons name="error-outline" size={24} color="white" />
-          )}
-          <Text style={styles.toastText}>{toast.message}</Text>
-        </Animated.View>
-      )}
+
+      {/* Toast rendered inside its own transparent Modal so it always
+          appears above ANY other RN Modal/Dialog on Android */}
+      <Modal
+        visible={toast.visible}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        hardwareAccelerated
+        onRequestClose={dismissToast}
+      >
+        <View style={styles.toastOverlay} pointerEvents="box-none">
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={dismissToast}
+            style={styles.toastTouchable}
+          >
+            <Animated.View
+              style={[
+                styles.toast,
+                {
+                  opacity,
+                  backgroundColor:
+                    toast.type === 'Success'
+                      ? '#2ecc71'
+                      : toast.type === 'Warning'
+                      ? '#f39c12'
+                      : '#e74c3c',
+                },
+              ]}
+            >
+              {toast.type === 'Success' ? (
+                <AntDesign name="checkcircleo" size={24} color="white" />
+              ) : toast.type === 'Warning' ? (
+                <AntDesign name="warning" size={24} color="white" />
+              ) : (
+                <MaterialIcons name="error-outline" size={24} color="white" />
+              )}
+              <Text style={styles.toastText}>{toast.message}</Text>
+            </Animated.View>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </AppContext.Provider>
   );
 };
@@ -95,24 +122,28 @@ export const useContextData = () => {
 };
 
 const styles = StyleSheet.create({
+  toastOverlay: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 60 : 50,
+  },
+  toastTouchable: {
+    width: '90%',
+  },
   toast: {
-    position: 'absolute',
-    top: 50,
-    alignSelf: 'center',
-    backgroundColor: '#4da6ff',
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 12,
-    elevation: 10,
-    zIndex: 99999,
-    width: "90%",
-    flexDirection: "row",
-    alignItems: "center",
+    elevation: 20,
     gap: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
   },
   toastText: {
     color: '#fff',

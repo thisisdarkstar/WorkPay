@@ -1,6 +1,7 @@
 import Feather from "@expo/vector-icons/Feather";
 import axios from "axios";
-import { useEffect, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
@@ -84,9 +85,11 @@ function Attendance() {
     }
   };
 
-  useEffect(() => {
-    fetchAttendanceData();
-  }, [currentMonth, currentYear]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchAttendanceData();
+    }, [currentMonth, currentYear])
+  );
 
   // Disable right arrow if at today's month/year
   const isNextDisabled =

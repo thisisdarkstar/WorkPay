@@ -44,7 +44,7 @@ function DataCard({ data }) {
         </View>
         <View style={styles.col}>
           <Text style={styles.title}>OverTime</Text>
-          <Text style={styles.content}>{convertOvertime(data.overtime)}</Text>
+          <Text style={styles.content}>{convertOvertime(data.overTime ?? data.overtime ?? 0)}</Text>
         </View>
       </View>
     </View>

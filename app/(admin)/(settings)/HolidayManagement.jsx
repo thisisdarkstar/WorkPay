@@ -2,8 +2,8 @@ import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import axios from "axios";
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   Modal,
   Platform,
@@ -69,9 +69,14 @@ function HolidayManagement() {
 
     try {
       setIsLoading(true);
+      const y = holidayDate.getFullYear();
+      const m = String(holidayDate.getMonth() + 1).padStart(2, '0');
+      const d = String(holidayDate.getDate()).padStart(2, '0');
+      const formattedDateString = `${y}-${m}-${d}`;
+
       const response = await axios.post(`${url}/api/holidays/add`, {
         description: holidayName,
-        date: holidayDate.toISOString()
+        date: formattedDateString
       }, {
         headers: {
           authorization: `Bearer ${await getToken()}`
@@ -128,9 +133,11 @@ function HolidayManagement() {
     setHolidayToDelete(null);
   };
 
-  useEffect(() => {
-    fetchHolidays();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchHolidays();
+    }, [])
+  );
 
   const getTotalHolidays = () => {
     return holidays.reduce((acc, m) => acc + (Array.isArray(m?.holidays) ? m.holidays.length : 0), 0);
@@ -235,7 +242,7 @@ function HolidayManagement() {
             >
               <Text style={{ color: holidayDate ? "#fff" : "#888" }}>
                 {holidayDate
-                  ? holidayDate.toISOString().slice(0, 10)
+                  ? `${holidayDate.getFullYear()}-${String(holidayDate.getMonth() + 1).padStart(2, '0')}-${String(holidayDate.getDate()).padStart(2, '0')}`
                   : "Select Date"}
               </Text>
             </TouchableOpacity>

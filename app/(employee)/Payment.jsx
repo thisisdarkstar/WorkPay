@@ -1,6 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import axios from 'axios'
-import { useEffect, useState } from 'react'
+import { useFocusEffect } from 'expo-router'
+import { useCallback, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { url } from '../../constants/EnvValue'
@@ -41,8 +42,18 @@ function Payment() {
   };
 
   // Helper function to determine payment status
-  const getPaymentStatus = (monthTransactions, baseSalary) => {
-    return Array.isArray(monthTransactions) && monthTransactions.length > 0 ? "Paid" : "Pending";
+  const getPaymentStatus = (monthData) => {
+    if (monthData?.isPaid) return { text: "PAID", isPaid: true };
+    const transactions = monthData?.transactions || [];
+    const hasSalary = transactions.some(t => t.payType === "SALARY");
+    if (hasSalary) return { text: "PAID", isPaid: true };
+    return { text: "PENDING", isPaid: false };
+  };
+
+  const getSalaryPaidDate = (monthData) => {
+    const transactions = monthData?.transactions || [];
+    const salaryTx = transactions.find(t => t.payType === "SALARY");
+    return salaryTx?.date || null;
   };
 
   const fetchPaymentHistory = async () => {
@@ -65,14 +76,24 @@ function Payment() {
     }
   };
 
-  useEffect(() => {
-    fetchPaymentHistory();
-  }, [selectedYear]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchPaymentHistory();
+    }, [selectedYear])
+  );
 
   // Current month calculations
+  const isBeforeJoining = paymentData?.currentTransaction?.isBeforeJoining;
+  const joinedDate = paymentData?.joinedDate;
   const currentMonthTransactions = paymentData?.currentTransaction?.transactions || [];
   const currentMonthTotals = calculateMonthTotals(currentMonthTransactions);
-  const currentMonthTotal = (paymentData?.baseSalary || 0) + currentMonthTotals.overtime + currentMonthTotals.bonus - currentMonthTotals.deduction - currentMonthTotals.advance;
+  const currentMonthTotal = isBeforeJoining 
+    ? 0 
+    : (paymentData?.baseSalary || 0) + currentMonthTotals.overtime + currentMonthTotals.bonus - currentMonthTotals.deduction - currentMonthTotals.advance;
+  const currentMonthStatus = isBeforeJoining 
+    ? { text: "UPCOMING", isPaid: false } 
+    : getPaymentStatus(paymentData?.currentTransaction);
+  const currentSalaryPaidDate = getSalaryPaidDate(paymentData?.currentTransaction);
 
   return (
     <SafeAreaView style={styles.mainContainer}>
@@ -81,18 +102,42 @@ function Payment() {
         {/* salary overview */}
         <View style={styles.salaryOverviewContainer}>
           <View style={styles.headerContainer}>
-            <Text style={styles.headerText}>
-              {currentMonth} {currentYear} Salary Overview
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <Text style={styles.headerText}>
+                {currentMonth} {currentYear} Salary Overview
+              </Text>
+              <View style={[styles.statusBadge, { 
+                backgroundColor: isBeforeJoining 
+                  ? 'rgba(74, 158, 255, 0.15)' 
+                  : (currentMonthStatus.isPaid ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 184, 0, 0.15)'), 
+                borderColor: isBeforeJoining 
+                  ? '#4A9EFF' 
+                  : (currentMonthStatus.isPaid ? '#10B981' : '#FFB800') 
+              }]}>
+                <MaterialCommunityIcons 
+                  name={isBeforeJoining ? "calendar-clock" : (currentMonthStatus.isPaid ? "check-circle" : "clock-outline")} 
+                  size={13} 
+                  color={isBeforeJoining ? '#4A9EFF' : (currentMonthStatus.isPaid ? '#10B981' : '#FFB800')} 
+                />
+                <Text style={[styles.statusBadgeText, { color: isBeforeJoining ? '#4A9EFF' : (currentMonthStatus.isPaid ? '#10B981' : '#FFB800') }]}>
+                  {currentMonthStatus.text}
+                </Text>
+              </View>
+            </View>
             <Text style={styles.headerSubText}>
-              This is a summary of your salary for the month of {currentMonth} {currentYear}.
+              {isBeforeJoining 
+                ? `Official joining date: ${joinedDate || 'Upcoming'}. Payroll will commence for your active employment period.`
+                : currentMonthStatus.isPaid && currentSalaryPaidDate 
+                  ? `Salary disbursed on ${currentSalaryPaidDate}.`
+                  : `This is a summary of your salary for the month of ${currentMonth} ${currentYear}.`
+              }
             </Text>
           </View>
 
           <View style={styles.detailsContainer}>
             <View style={styles.detailItem}>
               <Text style={styles.detailText}>Base Salary :</Text>
-              <Text style={styles.detailAmount}>Rs {paymentData?.baseSalary || 0}</Text>
+              <Text style={styles.detailAmount}>Rs {isBeforeJoining ? 0 : (paymentData?.baseSalary || 0)}</Text>
             </View>
             <View style={styles.detailItem}>
               <Text style={styles.detailText}>OverTime :</Text>
@@ -116,8 +161,16 @@ function Payment() {
             </View>
 
             <View style={styles.alert}>
-              <MaterialCommunityIcons name="alert-circle-outline" size={24} color="#cce6ff" />
-              <Text style={styles.alertText}>Salary will be credited on the last day of the month.</Text>
+              <MaterialCommunityIcons 
+                name={isBeforeJoining ? "information-outline" : "alert-circle-outline"} 
+                size={24} 
+                color={isBeforeJoining ? "#4A9EFF" : "#cce6ff"} 
+              />
+              <Text style={styles.alertText}>
+                {isBeforeJoining 
+                  ? "Employment has not commenced for this pay period. No salary is due."
+                  : "Salary will be credited on the last day of the month."}
+              </Text>
             </View>
           </View>
         </View>
@@ -171,7 +224,8 @@ function Payment() {
                 paymentData.previousTransaction.map((monthData, index) => {
                   const monthTotals = calculateMonthTotals(monthData.transactions);
                   const monthTotal = (monthData.baseSalary || 0) + monthTotals.overtime + monthTotals.bonus - monthTotals.deduction - monthTotals.advance;
-                  const status = getPaymentStatus(monthData.transactions, monthData.baseSalary);
+                  const statusInfo = getPaymentStatus(monthData);
+                  const salaryDate = getSalaryPaidDate(monthData);
                   const itemId = `${monthData.month}- ${selectedYear}- ${index}`;
                   const isOpen = expanded === index;
 
@@ -180,13 +234,19 @@ function Payment() {
                       <TouchableOpacity 
                         style={styles.historyCardHeader}
                         onPress={() => setExpanded(isOpen ? null : index)}
+                        activeOpacity={0.7}
                       >
-                        <Text style={styles.historyCardTitle}>{monthData.month} {selectedYear}</Text>
-
-                        {/* hide status for now */}
-                        {/* <Text style={[styles.status, {color: status === "Paid" ? "#4dff91" : "#ffcc00"}]}>
-                          {status}
-                        </Text> */}
+                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={styles.historyCardTitle}>{monthData.month} {selectedYear}</Text>
+                          <View style={[styles.statusBadge, { 
+                            backgroundColor: statusInfo.isPaid ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 184, 0, 0.15)', 
+                            borderColor: statusInfo.isPaid ? '#10B981' : '#FFB800' 
+                          }]}>
+                            <Text style={[styles.statusBadgeText, { color: statusInfo.isPaid ? '#10B981' : '#FFB800' }]}>
+                              {statusInfo.text}
+                            </Text>
+                          </View>
+                        </View>
                         <Text style={styles.historyCardAmount}>Rs {monthTotal}</Text>
                         <MaterialCommunityIcons 
                           name={isOpen ? "chevron-up" : "chevron-down"} 
@@ -198,6 +258,12 @@ function Payment() {
 
                       {isOpen && (
                         <View style={styles.historyCardDetails}>
+                          {statusInfo.isPaid && salaryDate && (
+                            <View style={[styles.detailItem, { backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: 8, borderRadius: 6 }]}>
+                              <Text style={[styles.detailText, { color: '#10B981', fontSize: 13 }]}>Disbursed on:</Text>
+                              <Text style={[styles.detailAmount, { color: '#10B981', fontSize: 13 }]}>{salaryDate}</Text>
+                            </View>
+                          )}
                           <View style={styles.detailItem}>
                             <Text style={styles.detailText}>Base Salary :</Text>
                             <Text style={styles.detailAmount}>Rs {monthData.baseSalary}</Text>
@@ -409,5 +475,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginTop: 5,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   }
 })

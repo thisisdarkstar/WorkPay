@@ -2,8 +2,8 @@ import Feather from '@expo/vector-icons/Feather'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import axios from 'axios'
 import * as Location from 'expo-location'
-import { useRouter } from "expo-router"
-import { useEffect, useRef, useState } from "react"
+import { useFocusEffect, useRouter } from "expo-router"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native"
 import Animated, {
   Easing,
@@ -187,8 +187,13 @@ function Home() {
     }
   }
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboardDetails();
+    }, [])
+  );
+
   useEffect(() => {
-    fetchDashboardDetails();
     preloadInterstitialAd();
   }, []);
 
@@ -417,7 +422,7 @@ function Home() {
                 {isAbsent && (
                   <>
                     <Feather name="x-circle" size={44} color="#EF4444" />
-                    <Text style={[styles.checkButtonText, { color: '#EF4444' }]}>Marked Absent</Text>
+                    <Text style={[styles.checkButtonText, { color: '#EF4444' }]}>Absent</Text>
                   </>
                 )}
                 {isLeave && (
@@ -429,7 +434,7 @@ function Home() {
                 {!hasCheckout && !isAbsent && !isLeave && isOfficeFinalized && (
                   <>
                     <Feather name="lock" size={44} color="#94A3B8" />
-                    <Text style={[styles.checkButtonText, { color: '#94A3B8' }]}>Attendance Closed</Text>
+                    <Text style={[styles.checkButtonText, { color: '#94A3B8' }]}>Closed</Text>
                   </>
                 )}
               </View>

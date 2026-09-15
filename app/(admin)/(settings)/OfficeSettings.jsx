@@ -3,8 +3,8 @@ import Entypo from '@expo/vector-icons/Entypo';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import axios from 'axios';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
@@ -302,9 +302,11 @@ const deleteOffice = async (officeId) => {
     }));
   };
 
-  useEffect(() => {
-    fetchOfficeDetails();
-  }, [])
+  useFocusEffect(
+    useCallback(() => {
+      fetchOfficeDetails();
+    }, [])
+  );
 
   const handleTimeChange = (event, selectedTime, type) => {
     if (event.type === 'dismissed') {

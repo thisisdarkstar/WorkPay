@@ -1,7 +1,8 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import axios from 'axios';
-import { useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -18,6 +19,29 @@ import { url } from '../../constants/EnvValue';
 import { useContextData } from '../../context/EmployeeContext';
 import { getApiErrorMessage, getToken } from '../../services/ApiService';
 import { formatDay } from "../../utils/TimeUtils";
+
+// ─── Timezone-safe date helpers ──────────────────────────────────────────────
+// toISOString() converts to UTC first, which causes a -5:30 shift in IST,
+// making the selected day appear as the previous calendar day.
+const formatLocalDate = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Parse a "YYYY-MM-DD" string into a local-midnight Date without UTC conversion
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return new Date();
+  if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return new Date(dateStr);
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 function Leave() {
   const [modalVisible, setModalVisible] = useState(false);
@@ -206,11 +230,12 @@ const formatDateForComparison = (date) => {
     }
   };
 
-  useEffect(() => {
-    fetchHolidays();
-    fetchLeavesHistory();
-  },
-[]); 
+  useFocusEffect(
+    useCallback(() => {
+      fetchHolidays();
+      fetchLeavesHistory();
+    }, [currentYear])
+  ); 
 
   // Recalculate preview when dates change
   useEffect(() => {
@@ -322,7 +347,7 @@ const formatDateForComparison = (date) => {
 
   return (
     <SafeAreaView style={styles.mainContainer}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* Enhanced Header */}
         <View style={styles.headerContainer}>
@@ -515,7 +540,7 @@ const formatDateForComparison = (date) => {
       style={{ width: '100%' }}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
     >
-          <ScrollView contentContainerStyle={styles.modalScrollContainer} showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={styles.modalScrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={styles.modalContainer}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Apply for Leave</Text>
@@ -546,17 +571,17 @@ const formatDateForComparison = (date) => {
 
               {showStartPicker && (
                 <DateTimePicker
-                  value={startDate ? new Date(startDate) : new Date()}
+                  value={startDate ? parseLocalDate(startDate) : new Date()}
                   mode="date"
                   display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                   onChange={(event, selectedDate) => {
                     setShowStartPicker(false);
                     if (event.type === 'set' && selectedDate) {
-                      setStartDate(selectedDate.toISOString().slice(0, 10));
+                      setStartDate(formatLocalDate(selectedDate));
                     }
                   }}
                   minimumDate={new Date()}
-                  maximumDate={endDate ? new Date(endDate) : undefined}
+                  maximumDate={endDate ? parseLocalDate(endDate) : undefined}
                 />
               )}
 
@@ -579,16 +604,16 @@ const formatDateForComparison = (date) => {
 
               {showEndPicker && (
                 <DateTimePicker
-                  value={endDate ? new Date(endDate) : new Date()}
+                  value={endDate ? parseLocalDate(endDate) : new Date()}
                   mode="date"
                   display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                   onChange={(event, selectedDate) => {
                     setShowEndPicker(false);
                     if (event.type === 'set' && selectedDate) {
-                      setEndDate(selectedDate.toISOString().slice(0, 10));
+                      setEndDate(formatLocalDate(selectedDate));
                     }
                   }}
-                  minimumDate={startDate ? new Date(startDate) : new Date()}
+                  minimumDate={startDate ? parseLocalDate(startDate) : new Date()}
                 />
               )}
               {/* Leave Preview */}

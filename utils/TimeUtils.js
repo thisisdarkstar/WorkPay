@@ -78,6 +78,12 @@ export function calculateHoursManual(checkin, checkout) {
 
 export function formatDay(dateString) {
   if (!dateString) return "—";
+  // If it's a plain "YYYY-MM-DD" string, parse directly to avoid UTC→local shift
+  if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    const [y, m, d] = dateString.split('-').map(Number);
+    const month = months[m - 1]?.name || "";
+    return `${d} ${month}`;
+  }
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return "—";
   const day = date.getDate();

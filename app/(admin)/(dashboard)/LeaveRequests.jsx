@@ -1,7 +1,7 @@
 import AntDesign from '@expo/vector-icons/AntDesign';
 import axios from 'axios';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
@@ -64,9 +64,11 @@ function LeaveRequests() {
   }
 
 
-  useEffect(() => {
-    fetchLeaveRequest();
-  }, [id]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchLeaveRequest();
+    }, [id])
+  );
 
 
 
