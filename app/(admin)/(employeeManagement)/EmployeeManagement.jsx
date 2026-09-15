@@ -10,6 +10,7 @@ import {
   FlatList,
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   Share,
   StatusBar,
@@ -37,6 +38,7 @@ function EmployeeManagement() {
   const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [employeeToStatusUpdate, setEmployeeToStatusUpdate] = useState(null);
   const [editingEmployee, setEditingEmployee] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const {showToast} = useContextData();
   const {officeData} = useOfficeContextData();
   const [showOfficeList, setShowOfficeList] = useState(false);
@@ -296,6 +298,15 @@ function EmployeeManagement() {
       fetchEmployees();
     }, [])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchEmployees();
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   // Search and filter functionality
   useEffect(() => {
@@ -620,7 +631,15 @@ function EmployeeManagement() {
           renderItem={renderEmployeeCard}
           keyExtractor={(item) => item?.id?.toString() || Math.random().toString()}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#4A9EFF']}
+              tintColor="#4A9EFF"
+            />
+          }
           ListEmptyComponent={
             loading ? (
               <View style={{ padding: 40, alignItems: 'center' }}>

@@ -2,7 +2,7 @@ import AntDesign from '@expo/vector-icons/AntDesign';
 import axios from 'axios';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
@@ -15,6 +15,7 @@ function LeaveRequests() {
   const [activeTab, setActiveTab] = useState('pendingLeaves');
   const [data,setData] = useState([]);
   const [processingLeaveId, setProcessingLeaveId] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const {showToast} = useContextData();
   const {id} = useLocalSearchParams();
 
@@ -69,6 +70,15 @@ function LeaveRequests() {
       fetchLeaveRequest();
     }, [id])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchLeaveRequest();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [id]);
 
 
 
@@ -132,7 +142,17 @@ function LeaveRequests() {
       </View>
 
       {/* Content */}
-      <ScrollView style={styles.content}>
+      <ScrollView 
+        style={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4A9EFF']}
+            tintColor="#4A9EFF"
+          />
+        }
+      >
         <View style={styles.requestsContainer}>
          {Array.isArray(data?.[activeTab]) && data[activeTab].length > 0 ? data[activeTab].map((request, index) => (
             <View key={request?.id || index} style={styles.requestItem}>

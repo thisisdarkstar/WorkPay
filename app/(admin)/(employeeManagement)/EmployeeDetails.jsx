@@ -3,10 +3,11 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  RefreshControl,
   StatusBar,
   StyleSheet,
   Text,
@@ -43,6 +44,20 @@ const months = [
   { number: 11, name: "November" },
   { number: 12, name: "December" },
 ];
+
+const getJoinedYear = (date) => {
+  if (!date) return null;
+  const match = String(date).match(/^(\d{4})/);
+  if (match) {
+    const yr = parseInt(match[1], 10);
+    if (!isNaN(yr)) return yr;
+  }
+  const d = new Date(date);
+  if (!isNaN(d.getFullYear())) {
+    return d.getFullYear();
+  }
+  return null;
+};
 
  const calculateMonthTotals = (transactions) => {
     if (!Array.isArray(transactions)) return { overtime: 0, bonus: 0, deduction: 0, advance: 0 };
@@ -158,8 +173,39 @@ useEffect(()=>{
 },[id,selectedPaymentYear])
   
 
-  // Generate years for dropdown (current year and 4 previous years)
-  const availableYears = Array.from({ length: 5 }, (_, i) => thisYear - i);
+  // Generate years for dropdown from employee's joinedDate year to current year
+  const joinedYear = getJoinedYear(employee?.joinedDate);
+  const startPaymentYear = (joinedYear && joinedYear <= thisYear) ? joinedYear : thisYear;
+  const availableYears = Array.from(
+    { length: thisYear - startPaymentYear + 1 },
+    (_, i) => thisYear - i
+  );
+
+  useEffect(() => {
+    if (selectedPaymentYear < startPaymentYear || selectedPaymentYear > thisYear) {
+      setSelectedPaymentYear(thisYear);
+    }
+    if (selectedLeaveYear < startPaymentYear || selectedLeaveYear > thisYear) {
+      setSelectedLeaveYear(thisYear);
+    }
+  }, [startPaymentYear, thisYear, selectedPaymentYear, selectedLeaveYear]);
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (activeTab === 'attendance') {
+        await Promise.all([fetchEmployeeDetails(), fetchAttendanceData()]);
+      } else if (activeTab === 'payment') {
+        await Promise.all([fetchEmployeeDetails(), fetchPaymentsData()]);
+      } else if (activeTab === 'leave') {
+        await Promise.all([fetchEmployeeDetails(), fetchLeavesData()]);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [activeTab, id, currentMonth, currentYear, selectedPaymentYear, selectedLeaveYear]);
 
 
   // Handle month navigation
@@ -501,7 +547,15 @@ useEffect(()=>{
           <FlatList
             data={attendanceData?.attendanceRecords || []}
             keyExtractor={(item, index) => item?.id?.toString() || index.toString()}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#4A9EFF']}
+                tintColor="#4A9EFF"
+              />
+            }
             ListHeaderComponent={
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryTitle}>Monthly Summary</Text>
@@ -542,7 +596,15 @@ useEffect(()=>{
           <FlatList
             data={paymentsData?.transactionsData || []}
             keyExtractor={(item,index) => item?.id?.toString() || index.toString()}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#4A9EFF']}
+                tintColor="#4A9EFF"
+              />
+            }
             renderItem={renderPaymentCard}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={
@@ -560,7 +622,15 @@ useEffect(()=>{
           <FlatList
             data={leavesData?.leaves || []}
             keyExtractor={(item, index) => item?.id?.toString() || index.toString()}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#4A9EFF']}
+                tintColor="#4A9EFF"
+              />
+            }
             ListHeaderComponent={
               <View style={styles.leaveSummaryCard}>
                 <Text style={styles.summaryTitle}>Leave Summary ({selectedLeaveYear})</Text>

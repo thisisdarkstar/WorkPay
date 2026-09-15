@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -44,6 +45,7 @@ const parseLocalDate = (dateStr) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Leave() {
+  const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [isLeave, setIsLeave] = useState(true);
   const [holidaysData, setHolidaysData] = useState([]);
@@ -237,6 +239,15 @@ const formatDateForComparison = (date) => {
     }, [currentYear])
   ); 
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([fetchHolidays(), fetchLeavesHistory()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [currentYear]); 
+
   // Recalculate preview when dates change
   useEffect(() => {
     if (startDate && rawHolidays.length > 0) {
@@ -347,7 +358,19 @@ const formatDateForComparison = (date) => {
 
   return (
     <SafeAreaView style={styles.mainContainer}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView 
+        contentContainerStyle={styles.container} 
+        showsVerticalScrollIndicator={false} 
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4A9EFF']}
+            tintColor="#4A9EFF"
+          />
+        }
+      >
 
         {/* Enhanced Header */}
         <View style={styles.headerContainer}>

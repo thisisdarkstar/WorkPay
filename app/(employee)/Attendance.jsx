@@ -2,7 +2,7 @@ import Feather from "@expo/vector-icons/Feather";
 import axios from "axios";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -38,6 +38,7 @@ function Attendance() {
   const [currentYear, setCurrentYear] = useState(thisYear);
   const [attendanceData, setAttendanceData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const { showToast } = useContextData();
 
   // Handle left arrow (previous month)
@@ -91,6 +92,15 @@ function Attendance() {
     }, [currentMonth, currentYear])
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchAttendanceData();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [currentMonth, currentYear]);
+
   // Disable right arrow if at today's month/year
   const isNextDisabled =
     currentMonth === thisMonth && currentYear === thisYear;
@@ -131,7 +141,15 @@ function Attendance() {
         <FlatList
           data={records}
           keyExtractor={(item, index) => item?.id?.toString() || index.toString()}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: 20, flexGrow: 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#4A9EFF']}
+              tintColor="#4A9EFF"
+            />
+          }
           ListHeaderComponent={
             <View style={styles.overViewContainer}>
               <Animated.View 

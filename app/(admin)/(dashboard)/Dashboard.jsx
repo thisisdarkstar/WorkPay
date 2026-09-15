@@ -5,7 +5,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import axios from 'axios';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
@@ -18,6 +18,7 @@ function Dashboard() {
   const router = useRouter();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [isAttendanceFinalized, setIsAttendanceFinalized] = useState(false);
   const {showToast} = useContextData();
   const {setOfficeData} = useOfficeContextData();
@@ -118,6 +119,18 @@ function Dashboard() {
       }
     }, [currentOffice])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await dashboardDetails(currentOffice);
+      if (currentOffice !== 'all') {
+        await checkAttendanceFinalization(currentOffice);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [currentOffice]);
   
   const stats = [
     { icon: 'user', iconSet: 'AntDesign', color: '#4A9EFF', label: 'Total Employees',field:"totalEmployees" },
@@ -155,7 +168,16 @@ function Dashboard() {
                 </TouchableOpacity>
         </View>
 
-        <ScrollView>
+        <ScrollView
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#4A9EFF']}
+              tintColor="#4A9EFF"
+            />
+          }
+        >
         
         {/* Overview Section */}
         <View style={styles.sectionContainer}>

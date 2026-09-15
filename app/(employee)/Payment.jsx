@@ -1,8 +1,8 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import axios from 'axios'
 import { useFocusEffect } from 'expo-router'
-import { useCallback, useState } from 'react'
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useCallback, useEffect, useState } from 'react'
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { url } from '../../constants/EnvValue'
 import { useContextData } from '../../context/EmployeeContext'
@@ -14,6 +14,20 @@ const months = [
   "July", "August", "September", "October", "November", "December"
 ]
 
+const getJoinedYear = (date) => {
+  if (!date) return null;
+  const match = String(date).match(/^(\d{4})/);
+  if (match) {
+    const yr = parseInt(match[1], 10);
+    if (!isNaN(yr)) return yr;
+  }
+  const d = new Date(date);
+  if (!isNaN(d.getFullYear())) {
+    return d.getFullYear();
+  }
+  return null;
+};
+
 function Payment() {
   const today = new Date();
   const currentMonth = months[today.getMonth()];
@@ -24,9 +38,19 @@ function Payment() {
   const [paymentData, setPaymentData] = useState(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const {showToast} = useContextData();
+  const [refreshing, setRefreshing] = useState(false);
+  const { showToast, employeeData } = useContextData();
 
-  const years = Array.from({ length: 10 }, (_, i) => currentYear - i);
+  const joinedDate = paymentData?.joinedDate || employeeData?.joinedDate;
+  const joinedYear = getJoinedYear(joinedDate);
+  const startYear = (joinedYear && joinedYear <= currentYear) ? joinedYear : currentYear;
+  const years = Array.from({ length: currentYear - startYear + 1 }, (_, i) => currentYear - i);
+
+  useEffect(() => {
+    if (selectedYear < startYear || selectedYear > currentYear) {
+      setSelectedYear(currentYear);
+    }
+  }, [startYear, currentYear, selectedYear]);
 
   const [expanded, setExpanded] = useState(null);
 
@@ -82,9 +106,17 @@ function Payment() {
     }, [selectedYear])
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchPaymentHistory();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [selectedYear]);
+
   // Current month calculations
   const isBeforeJoining = paymentData?.currentTransaction?.isBeforeJoining;
-  const joinedDate = paymentData?.joinedDate;
   const currentMonthTransactions = paymentData?.currentTransaction?.transactions || [];
   const currentMonthTotals = calculateMonthTotals(currentMonthTransactions);
   const currentMonthTotal = isBeforeJoining 
@@ -97,7 +129,17 @@ function Payment() {
 
   return (
     <SafeAreaView style={styles.mainContainer}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+      <ScrollView 
+        contentContainerStyle={{ paddingBottom: 30, flexGrow: 1 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4A9EFF']}
+            tintColor="#4A9EFF"
+          />
+        }
+      >
         
         {/* salary overview */}
         <View style={styles.salaryOverviewContainer}>

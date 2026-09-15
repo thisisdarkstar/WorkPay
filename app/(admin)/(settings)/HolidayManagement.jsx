@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import {
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,6 +30,7 @@ function HolidayManagement() {
   const [holidayName, setHolidayName] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
   const {showToast} = useContextData()
 
@@ -139,13 +141,32 @@ function HolidayManagement() {
     }, [])
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchHolidays();
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   const getTotalHolidays = () => {
     return holidays.reduce((acc, m) => acc + (Array.isArray(m?.holidays) ? m.holidays.length : 0), 0);
   };
 
   return (
     <SafeAreaView style={styles.mainContainer}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView 
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4A9EFF']}
+            tintColor="#4A9EFF"
+          />
+        }
+      >
         {/* Header */}
         <View style={{width: "100%", alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 20}}>
           <TouchableOpacity 

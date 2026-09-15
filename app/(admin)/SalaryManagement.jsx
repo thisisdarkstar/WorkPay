@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -30,6 +31,7 @@ function AdminSalaryManagement() {
 
   // States
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [advanceModalVisible, setAdvanceModalVisible] = useState(false)
   const [deductionModalVisible, setDeductionModalVisible] = useState(false)
   const [bonusModalVisible, setBonusModalVisible] = useState(false)
@@ -74,6 +76,15 @@ function AdminSalaryManagement() {
       fetchPaymentHistory();
     }, [selectedMonth, selectedYear])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchPaymentHistory();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [selectedMonth, selectedYear]);
 
 
     const calculateMonthTotals = (transactions) => {
@@ -586,7 +597,15 @@ function AdminSalaryManagement() {
             : []
         }
         keyExtractor={(item) => item?.empId?.toString() || item?.id?.toString() || Math.random().toString()}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4A9EFF']}
+            tintColor="#4A9EFF"
+          />
+        }
         renderItem={renderEmployeeCard}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={

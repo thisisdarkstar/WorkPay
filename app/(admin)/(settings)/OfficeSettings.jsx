@@ -5,7 +5,7 @@ import axios from 'axios';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from "../../../context/EmployeeContext";
@@ -28,6 +28,7 @@ function OfficeSettings() {
   const [showEnd, setShowEnd] = useState(false);
   const [showAutoFinalize, setShowAutoFinalize] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [officeList, setOfficeList] = useState([]);
   const [actionType, setActionType] = useState('add'); 
@@ -308,6 +309,15 @@ const deleteOffice = async (officeId) => {
     }, [])
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchOfficeDetails();
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   const handleTimeChange = (event, selectedTime, type) => {
     if (event.type === 'dismissed') {
       if (type === 'start') {
@@ -356,6 +366,14 @@ const deleteOffice = async (officeId) => {
         <ScrollView 
           contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#4A9EFF']}
+              tintColor="#4A9EFF"
+            />
+          }
         >
     
       <Text style={styles.header}>Office Settings</Text>

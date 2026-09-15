@@ -4,7 +4,7 @@ import axios from 'axios'
 import * as Location from 'expo-location'
 import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native"
+import { Modal, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native"
 import Animated, {
   Easing,
   FadeIn,
@@ -53,6 +53,7 @@ function Home() {
   const [locationLoading, setLocationLoading] = useState(false);
   const router = useRouter();
   const [dashboardDetails, setDashboardDetails] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const {setEmployeeData, showToast} = useContextData();
 
   // Animation values
@@ -192,6 +193,15 @@ function Home() {
       fetchDashboardDetails();
     }, [])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchDashboardDetails();
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
     preloadInterstitialAd();
@@ -387,6 +397,14 @@ function Home() {
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
         onScrollBeginDrag={() => setShowMenu(false)}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4A9EFF']}
+            tintColor="#4A9EFF"
+          />
+        }
       >
 
         {/* Time + Check In */}

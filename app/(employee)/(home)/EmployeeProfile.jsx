@@ -2,8 +2,8 @@ import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import axios from "axios";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,6 +13,7 @@ import { getApiErrorMessage, getToken } from "../../../services/ApiService";
 
 function Profile() {
   const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
   const [showPasswordSection, setShowPasswordSection] = useState(false);
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -52,6 +53,15 @@ function Profile() {
       console.error('Error fetching dashboard details:', error);
     }
   }
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchDashboardDetails();
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const handlePasswordUpdate = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
@@ -169,7 +179,17 @@ function Profile() {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4A9EFF']}
+            tintColor="#4A9EFF"
+          />
+        }
+      >
         
         {/* Profile Header */}
         <View style={styles.profileHeader}>

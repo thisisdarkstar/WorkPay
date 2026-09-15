@@ -2,8 +2,8 @@ import AntDesign from '@expo/vector-icons/AntDesign';
 import Feather from '@expo/vector-icons/Feather';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
@@ -12,6 +12,7 @@ import { getApiErrorMessage, getToken } from '../../../services/ApiService';
 function AttendanceStatus() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [employees, setEmployees] = useState([]);
   const { id, status, officeName } = useLocalSearchParams();
   const { showToast } = useContextData();
@@ -40,6 +41,15 @@ function AttendanceStatus() {
 
   useEffect(() => {
     fetchEmployeesData();
+  }, [id, status]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchEmployeesData();
+    } finally {
+      setRefreshing(false);
+    }
   }, [id, status]);
 
   const getStatusColor = (statusVal) => {
@@ -87,7 +97,17 @@ function AttendanceStatus() {
       </View>
 
       {/* Employees List */}
-      <ScrollView style={styles.listContainer}>
+      <ScrollView 
+        style={styles.listContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4A9EFF']}
+            tintColor="#4A9EFF"
+          />
+        }
+      >
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#4A9EFF" />
