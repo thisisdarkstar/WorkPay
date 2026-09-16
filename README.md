@@ -330,15 +330,83 @@ If you prefer building in the cloud without configuring local Android SDKs:
    EXPO_PUBLIC_ADMOB_BANNER_ID="ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ"
    ```
 
-3. **Trigger Cloud Builds**:
-   - **Generate Standalone Testing APK**:
+3. **Trigger Cloud Builds (Android & iOS)**:
+   - **Android - Standalone Testing APK**:
      ```bash
      eas build --platform android --profile preview
      ```
-   - **Generate Google Play Store App Bundle (AAB)**:
+   - **Android - Google Play Store App Bundle (AAB)**:
      ```bash
      eas build --platform android --profile production
      ```
+   - **iOS - Simulator Build (No Apple Developer Account Required)**:
+     ```bash
+     eas build --platform ios --profile preview-simulator
+     ```
+     *Produces a `.tar.gz` containing `WorkPay.app`. Drag-and-drop directly into any iOS Simulator on a Mac.*
+   - **iOS - Physical Device Testing (Ad-Hoc / Internal Distribution)**:
+     ```bash
+     # 1. Register your physical iPhone / iPad UDID:
+     eas device:create
+     
+     # 2. Trigger the internal distribution build:
+     eas build --platform ios --profile preview
+     ```
+     *EAS provides an installation web link with a QR code. Open the link in Safari on your registered iPhone to install the `.ipa` over-the-air.*
+   - **iOS - TestFlight / App Store Release**:
+     ```bash
+     eas build --platform ios --profile production
+     eas submit --platform ios
+     ```
+
+---
+
+### 🍏 iOS Testing & Deployment Guide
+
+Testing on iOS requires specific handling depending on your environment:
+
+#### 1. Testing on Physical iOS Devices (iPhone / iPad)
+Apple strictly enforces cryptographic code-signing for all physical devices. You have two options:
+
+##### Option A: Internal Ad-Hoc Distribution (Fastest for Internal Teams)
+1. Register your iPhone/iPad with your Apple Developer account via EAS:
+   ```bash
+   npx eas device:create
+   ```
+   *(Scan the QR code displayed with your iPhone camera to register your device's UDID automatically).*
+2. Build the Ad-Hoc installable `.ipa`:
+   ```bash
+   npx eas build --platform ios --profile preview
+   ```
+3. Once the build succeeds, EAS outputs a public installation page. Open this link in **Safari on your iPhone** and tap **Install**.
+
+##### Option B: Apple TestFlight (Best for External Testers & Clients)
+1. Ensure your Apple Developer Account ($99/year) is connected in EAS.
+2. Build for production:
+   ```bash
+   npx eas build --platform ios --profile production
+   ```
+3. Upload to App Store Connect:
+   ```bash
+   npx eas submit --platform ios
+   ```
+4. In [App Store Connect](https://appstoreconnect.apple.com), navigate to **TestFlight**, add internal/external tester emails. Testers download the free **TestFlight** app from the App Store and tap **Accept** to install.
+
+#### 2. Testing on iOS Simulator (Mac)
+If you or a team member have a Mac with Xcode installed:
+- Build command:
+  ```bash
+  npx eas build --platform ios --profile preview-simulator
+  ```
+- **No Apple Developer account required**. EAS compiles a `.tar.gz` bundle on Expo's macOS cloud.
+- Unpack and drag `WorkPay.app` directly onto the Xcode iOS Simulator window.
+
+#### 3. iOS Permissions & Privacy Keys Configured
+The following iOS permissions are pre-configured in `app.json` (`expo.ios.infoPlist`):
+- `NSLocationWhenInUseUsageDescription`: Allows location verification against office geo-fencing for clock-in.
+- `NSLocationAlwaysAndWhenInUseUsageDescription`: Extended location permission for persistent office presence verification.
+- `ITSAppUsesNonExemptEncryption: false`: Eliminates App Store export compliance questionnaires.
+- `userTrackingUsageDescription`: Required by Apple App Tracking Transparency (ATT) framework for Google AdMob (`react-native-google-mobile-ads`).
 
 ---
 

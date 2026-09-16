@@ -9,7 +9,14 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.chiranjeebnayak.workPayApp",
+      "buildNumber": "13",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "WorkPay requires location access to verify employee presence within the office premises for clock-in and attendance.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "WorkPay requires location access to verify employee presence within the office premises for clock-in and attendance.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -69,8 +76,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "6e570bba-11a4-48ee-a574-0f9ec8d9daeb"
+        "projectId": "d232c648-953b-41b9-b5b3-ea46ed7b35ae"
       }
-    }
+    },
+    "owner": "darkstar7777"
   }
 }
