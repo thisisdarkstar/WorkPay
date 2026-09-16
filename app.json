@@ -2,7 +2,7 @@
   "expo": {
     "name": "WorkPay",
     "slug": "workpay",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "workpayapp",
@@ -18,7 +18,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.chiranjeebnayak.workPayApp",
-      "versionCode": 12,
+      "versionCode": 13,
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
