@@ -67,8 +67,8 @@ export const AdBanner: React.FC<AdBannerProps> = ({
   const { BannerAd } = googleAds;
   const isAdaptive =
     size === BannerAdSize.ANCHORED_ADAPTIVE_BANNER ||
-    size === BannerAdSize.LARGE_ANCHORED_ADAPTIVE_BANNER ||
-    size === BannerAdSize.INLINE_ADAPTIVE_BANNER;
+    size === 'LARGE_ANCHORED_ADAPTIVE_BANNER' ||
+    size === 'INLINE_ADAPTIVE_BANNER';
   const unitId = adUnitId || getBannerAdUnitId(isAdaptive);
   const actualSize = unitId.includes('6300978111') ? BannerAdSize.BANNER : size;
 
