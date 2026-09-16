@@ -43,7 +43,12 @@ function Dashboard() {
       });
       const resData = response.data;
       setData(resData);
-      if (resData?.offices) setOfficeData(resData.offices);
+      if (resData?.offices) {
+        setOfficeData(resData.offices);
+        if (officeId !== 'all' && !resData.offices.some(o => o.id === Number(officeId))) {
+          setCurrentOffice('all');
+        }
+      }
       if (resData?.office?.id) setCurrentOffice(resData.office.id);
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Error fetching dashboard details'), 'Error');
@@ -152,10 +157,12 @@ function Dashboard() {
     }
   };
 
-  const handleLogout =async ()=>{
-     await removeToken();
-      router.replace('/')
-  }
+  const handleLogout = async () => {
+    setOfficeData([]);
+    setData(null);
+    await removeToken();
+    router.replace('/');
+  };
 
   return (
     <SafeAreaView style={styles.container}>
