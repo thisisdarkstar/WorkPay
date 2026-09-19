@@ -10,10 +10,12 @@ import { useContextData } from '../../../context/EmployeeContext';
 import { useOfficeContextData } from '../../../context/OfficeContext';
 import { api, getApiErrorMessage, removeToken } from '../../../services/ApiService';
 import { formatDay } from "../../../utils/TimeUtils";
+import { useExitConfirmation } from "../../../hooks/useExitConfirmation";
 
 
 function Dashboard() {
   const router = useRouter();
+  const { ExitModal } = useExitConfirmation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -443,6 +445,7 @@ function Dashboard() {
             </View>
           </View>
         </Modal>
+        {ExitModal}
     </SafeAreaView>
   )
 }

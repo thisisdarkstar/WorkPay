@@ -25,6 +25,7 @@ import { api, getApiErrorMessage, getToken, removeToken } from '../../../service
 import { calculateHoursManual, formatMinutesToHHMM } from "../../../utils/TimeUtils"
 import { preloadInterstitialAd, showInterstitialAd } from '../../../services/AdService'
 import { styles } from '../../../styles/HomeStyles'
+import { useExitConfirmation } from '../../../hooks/useExitConfirmation'
 
 // Haversine formula to calculate distance between two coordinates
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -45,6 +46,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 
 function Home() {
   const [dateTime, setDateTime] = useState(new Date());
+  const { ExitModal } = useExitConfirmation();
   const [showMenu, setShowMenu] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
@@ -686,6 +688,7 @@ function Home() {
           </Animated.View>
         </View>
       </Modal>
+      {ExitModal}
     </SafeAreaView>
   )
 }

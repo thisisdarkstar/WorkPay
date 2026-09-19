@@ -2,7 +2,7 @@
 import AntDesign from '@expo/vector-icons/AntDesign';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
-import { Animated, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 const defaultContext = {
   employeeData: {},
   setEmployeeData: () => {},
@@ -69,19 +69,16 @@ export const EmployeeProvider = ({ children }) => {
     <AppContext.Provider value={{ employeeData, setEmployeeData, showToast }}>
       {children}
 
-      {/* Toast rendered inside its own transparent Modal so it always
-          appears above ANY other RN Modal/Dialog on Android */}
-      <Modal
-        visible={toast.visible}
-        transparent
-        animationType="none"
-        statusBarTranslucent
-        hardwareAccelerated
-        onRequestClose={dismissToast}
-      >
+      {/* Toast overlay: rendered as an absolutely-positioned, pointer-transparent
+          layer instead of a Modal. A transparent RN Modal captures ALL touches
+          across the screen on Android (blocking taps on the UI beneath until it
+          closes). Using pointerEvents="box-none" on the container lets touches
+          pass through the empty area, while only the toast pill itself is
+          touchable (tap to dismiss). */}
+      {toast.visible && (
         <View style={styles.toastOverlay} pointerEvents="box-none">
           <TouchableOpacity
-            activeOpacity={1}
+            activeOpacity={0.9}
             onPress={dismissToast}
             style={styles.toastTouchable}
           >
@@ -110,7 +107,7 @@ export const EmployeeProvider = ({ children }) => {
             </Animated.View>
           </TouchableOpacity>
         </View>
-      </Modal>
+      )}
     </AppContext.Provider>
   );
 };
@@ -123,10 +120,16 @@ export const useContextData = () => {
 
 const styles = StyleSheet.create({
   toastOverlay: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'flex-start',
     alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? 60 : 50,
+    zIndex: 9999,
+    elevation: 9999,
   },
   toastTouchable: {
     width: '90%',

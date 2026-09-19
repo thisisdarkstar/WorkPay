@@ -10,7 +10,6 @@ import { useEffect } from 'react';
 import { isNativeAdMobAvailable, getGoogleMobileAds } from '../constants/AdsConfig';
 import { showAppOpenAdOnLaunch } from '../services/AdService';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import ExitConfirmationModal from '../components/ExitConfirmationModal';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -63,7 +62,6 @@ export default function RootLayout() {
         <Stack.Screen name="(admin)" options={{ headerShown: false }} />
         <Stack.Screen name="+not-found" />
       </Stack>
-      <ExitConfirmationModal />
       <StatusBar style="auto" />
       </OfficeProvider>
       </EmployeeProvider>

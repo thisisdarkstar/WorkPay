@@ -478,9 +478,9 @@ function AdminSalaryManagement() {
             </View>
           )}
           
-          {/* Paid Status Indicator + Revert option */}
+          {/* Paid Status Indicator + Revert option (stacked, full width) */}
           {isPaid && (
-            <View style={confirmStyles.paidRow}>
+            <View style={confirmStyles.paidColumn}>
               <View style={styles.paidIndicator}>
                 <MaterialCommunityIcons name="check-circle" size={16} color="#7ED321" />
                 <Text style={styles.paidText}>Salary Paid</Text>
@@ -489,8 +489,8 @@ function AdminSalaryManagement() {
                 style={confirmStyles.revertButton}
                 onPress={() => promptRevertSalary(item)}
               >
-                <MaterialCommunityIcons name="undo-variant" size={15} color="#F5A623" />
-                <Text style={confirmStyles.revertButtonText}>Revert</Text>
+                <MaterialCommunityIcons name="undo-variant" size={18} color="#F5A623" />
+                <Text style={confirmStyles.revertButtonText}>Revert Salary</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1107,26 +1107,26 @@ const confirmStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  paidRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+  paidColumn: {
+    width: '100%',
+    gap: 8,
   },
   revertButton: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
     borderRadius: 8,
-    backgroundColor: 'rgba(245,166,35,0.12)',
+    minHeight: 44,
+    backgroundColor: 'rgba(245,166,35,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(245,166,35,0.4)',
+    borderColor: 'rgba(245,166,35,0.5)',
   },
   revertButtonText: {
     color: '#F5A623',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
   },
 });
