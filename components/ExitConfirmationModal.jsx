@@ -37,28 +37,30 @@ export default function ExitConfirmationModal() {
     if (Platform.OS !== 'android') return;
 
     const onBackPress = () => {
-      // 1. If modal is already showing, a back press triggers exit
+      // 1. If the confirmation modal is already showing, a second back press
+      //    within the window confirms exit ("double back to exit").
       if (visible) {
         handleConfirmExit();
         return true;
       }
 
-      // 2. If navigator can go back to a previous screen, let it navigate back
+      // 2. If we can navigate back within the app, do that instead of exiting.
       if (navigationRef.isReady() && navigationRef.canGoBack()) {
         navigationRef.goBack();
         return true;
       }
 
-      // 3. At root screen: intercept exit and show styled confirmation dialog
+      // 3. At the root screen: intercept the exit and show the confirmation
+      //    dialog. Returning true prevents the default single-press exit.
       setVisible(true);
 
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
-      // Auto-dismiss after 4 seconds if no action taken
+      // Auto-dismiss after 3 seconds; a back press within this window exits.
       timerRef.current = setTimeout(() => {
         setVisible(false);
-      }, 4000);
+      }, 3000);
 
       return true;
     };
@@ -95,7 +97,7 @@ export default function ExitConfirmationModal() {
               {/* Title & Message */}
               <Text style={styles.title}>Exit WorkPay?</Text>
               <Text style={styles.message}>
-                Are you sure you want to exit the app? Press back again or tap Confirm to exit.
+                Press back again or tap Confirm to exit WorkPay.
               </Text>
 
               {/* Action Buttons */}

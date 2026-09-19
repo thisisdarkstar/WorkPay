@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
+import { url } from '../constants/EnvValue';
 
 const TOKEN_KEY = 'USER_AUTH_TOKEN';
 const ROLE_KEY = 'USER_AUTH_ROLE';
@@ -44,11 +45,13 @@ export const parseJwt = (token) => {
 export const isTokenExpired = (token) => {
   try {
     const payload = parseJwt(token);
-    if (!payload || !payload.exp) return false;
+    // Fail closed: if the token can't be parsed or has no exp claim, treat it
+    // as expired/invalid so a bad token can never be kept as a live session.
+    if (!payload || !payload.exp) return true;
     // exp is in seconds, Date.now() is in ms
     return payload.exp * 1000 <= Date.now();
   } catch {
-    return false;
+    return true;
   }
 };
 
@@ -150,18 +153,18 @@ export const hasToken = async () => {
   return !!session?.token;
 };
 
-// Global Axios response interceptor to auto-clear expired sessions
+// Global Axios response interceptor to auto-clear expired/invalid sessions.
+// Any 401 (Unauthorized) means the stored token is no longer trusted by the
+// server, so we clear it locally. Login endpoints are excluded because a 401
+// there simply means "wrong credentials" and must not wipe an unrelated session.
 axios.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error?.response?.status === 401) {
-      const errMsg = error.response?.data?.error || '';
-      if (
-        errMsg.toLowerCase().includes('token expired') ||
-        errMsg.toLowerCase().includes('invalid token') ||
-        errMsg.toLowerCase().includes('no token provided')
-      ) {
-        console.warn('[ApiService] Received 401 token expiration. Clearing local session.');
+      const requestUrl = error.config?.url || '';
+      const isLoginRequest = /\/login$/i.test(requestUrl) || requestUrl.includes('/login');
+      if (!isLoginRequest) {
+        console.warn('[ApiService] Received 401 Unauthorized. Clearing local session.');
         await removeToken();
       }
     }
@@ -177,10 +180,62 @@ export const getApiErrorMessage = (error, defaultMsg = 'Something went wrong. Pl
   if (!error) return defaultMsg;
   if (typeof error === 'string') return error;
 
+  // H-07: Present a clear message for request timeouts / aborted requests.
+  if (error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '')) {
+    return 'The server took too long to respond. Please try again.';
+  }
+
   return (
     error?.response?.data?.error ||
     error?.response?.data?.message ||
     error?.message ||
     defaultMsg
   );
-};
+};
+
+/**
+ * Central pre-configured Axios instance for all authenticated API calls.
+ *
+ * - baseURL is set from EnvValue so callers pass only the path
+ *   (e.g. api.get('/api/employees/dashboard')).
+ * - A request interceptor injects `Authorization: Bearer <token>` from
+ *   SecureStore automatically, so screens no longer build headers by hand
+ *   (this also removes the inconsistent `authorization`/`Authorization` casing).
+ * - A response interceptor clears the local session on any non-login 401.
+ *
+ * Usage:
+ *   import { api } from '../services/ApiService';
+ *   const { data } = await api.get('/api/transactions/employee', { params: { year } });
+ */
+export const api = axios.create({
+  baseURL: url,
+  // H-07: Fail fast on unresponsive servers (e.g. Vercel cold starts / network
+  // stalls) instead of hanging the UI indefinitely. getApiErrorMessage surfaces
+  // the timeout to the user via error.message.
+  timeout: 20000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+api.interceptors.request.use(async (config) => {
+  const token = await getToken();
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error?.response?.status === 401) {
+      const requestUrl = error.config?.url || '';
+      const isLoginRequest = /\/login$/i.test(requestUrl) || requestUrl.includes('/login');
+      if (!isLoginRequest) {
+        console.warn('[ApiService] Received 401 Unauthorized. Clearing local session.');
+        await removeToken();
+      }
+    }
+    return Promise.reject(error);
+  }
+);

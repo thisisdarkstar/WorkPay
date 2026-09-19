@@ -65,9 +65,8 @@ WorkPay/
 │   ├── Colors.ts                   # Design system color palettes
 │   └── EnvValue.js                 # Centralized backend URL loader
 ├── context/
-│   ├── EmployeeContext.jsx         # Global employee state & toasts
-│   ├── OfficeContext.jsx           # Global office settings state
-│   └── ThemeContext.js             # Theme switching (Light / Dark)
+│   ├── EmployeeContext.js          # Global employee state & toasts
+│   └── OfficeContext.js            # Global office settings state
 ├── services/
 │   └── ApiService.js               # SecureStore tokens & error sanitization
 └── utils/

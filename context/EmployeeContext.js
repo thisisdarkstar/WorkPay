@@ -1,4 +1,4 @@
-// useContext
+// Employee context: global employee state + app-wide toast notifications.
 import AntDesign from '@expo/vector-icons/AntDesign';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { createContext, useCallback, useContext, useRef, useState } from 'react';

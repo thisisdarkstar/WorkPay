@@ -1,25 +1,24 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import axios from 'axios';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { url } from '../../constants/EnvValue';
 import { useContextData } from '../../context/EmployeeContext';
-import { getApiErrorMessage, getToken } from '../../services/ApiService';
+import { api, getApiErrorMessage, getToken } from '../../services/ApiService';
 import { formatDay } from "../../utils/TimeUtils";
+import { styles } from '../../styles/LeaveStyles';
 
 // ─── Timezone-safe date helpers ──────────────────────────────────────────────
 // toISOString() converts to UTC first, which causes a -5:30 shift in IST,
@@ -52,12 +51,14 @@ function Leave() {
   const [rawHolidays, setRawHolidays] = useState([]);
   const [isLoadingHolidays, setIsLoadingHolidays] = useState(false);
   const [leaveHistory, setLeaveHistory] = useState([]);
+  const [leaveBalance, setLeaveBalance] = useState(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [description, setDescription] = useState('');
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [leavePreview, setLeavePreview] = useState(null);
+  const [isApplyingLeave, setIsApplyingLeave] = useState(false);
   const currentYear = new Date().getFullYear();
   const {employeeData, showToast} = useContextData();
 
@@ -157,9 +158,11 @@ const formatDateForComparison = (date) => {
       return;
     }
 
-    const currentLeaveBal = Number(employeeData?.leaveBalance) || 0;
+    const currentLeaveBal = leaveBalance != null
+      ? leaveBalance
+      : (Number(employeeData?.leaveBalance) || 0);
 
-    // Valid leave period
+    // Valid leave period (instant local estimate for responsive UX)
     setLeavePreview({
       error: false,
       totalCalendarDays,
@@ -170,18 +173,55 @@ const formatDateForComparison = (date) => {
       unpaidDays: Math.max(0, totalLeaveDays - currentLeaveBal),
       isSingleDay: startDateStr === effectiveEndDate
     });
+
+    // M-10: Reconcile with the server-authoritative preview so the numbers the
+    // user sees exactly match what the backend will apply (holiday exclusions,
+    // paid/unpaid split, current leave balance). The local estimate above is a
+    // fast placeholder; this overwrites it once the server responds.
+    reconcileLeavePreviewWithServer(startDateStr, effectiveEndDate);
   };
 
-  const fetchHolidays = async () => {
+  // Calls the backend /api/leaves/preview endpoint and maps its authoritative
+  // result into the shape the UI already consumes. Silently ignores failures
+  // (the local estimate remains shown) to avoid blocking the user.
+  const reconcileLeavePreviewWithServer = async (startDateStr, endDateStr) => {
+    try {
+      const response = await api.post('/api/leaves/preview', {
+        startDate: startDateStr,
+        endDate: endDateStr,
+      });
+      const data = response.data;
+      if (!data) return;
+
+      if (data.valid === false) {
+        setLeavePreview({
+          error: true,
+          message: data.reason || 'This leave period is not valid.',
+          holidaysExcluded: data.holidaysExcluded || [],
+          type: 'server_rejected',
+        });
+        return;
+      }
+
+      setLeavePreview({
+        error: false,
+        totalCalendarDays: data.totalCalendarDays,
+        totalLeaveDays: data.totalWorkingDays,
+        holidaysExcluded: data.holidaysExcluded || [],
+        leaveBalance: data.leaveBalance,
+        paidDays: data.paidDays,
+        unpaidDays: data.unpaidDays,
+        isSingleDay: data.isSingleDay,
+      });
+    } catch {
+      // Keep the local estimate on network/preview failure.
+    }
+  };
+
+  const fetchHolidays = useCallback(async () => {
     try {
       setIsLoadingHolidays(true);
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.get(`${url}/api/holidays/getAll`, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
-      });
+      const response = await api.get('/api/holidays/getAll');
       
       // Store raw holidays for validation
       const allHolidays = [];
@@ -214,29 +254,28 @@ const formatDateForComparison = (date) => {
     } finally {
       setIsLoadingHolidays(false);
     }
-  };
+  }, [currentYear, showToast]);
 
-  const fetchLeavesHistory = async () => {
+  const fetchLeavesHistory = useCallback(async () => {
     try {
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.get(`${url}/api/leaves/employee-leaves?year=${currentYear}`, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
+      const response = await api.get('/api/leaves/employee-leaves', {
+        params: { year: currentYear },
       });
       setLeaveHistory(response.data?.leaves || []);
+      if (response.data?.leaveBalance != null) {
+        setLeaveBalance(Number(response.data.leaveBalance));
+      }
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to fetch leave history"), 'Error');
       console.error('Error fetching Leaves History:', error);
     }
-  };
+  }, [currentYear, showToast]);
 
   useFocusEffect(
     useCallback(() => {
       fetchHolidays();
       fetchLeavesHistory();
-    }, [currentYear])
+    }, [fetchHolidays, fetchLeavesHistory])
   ); 
 
   const onRefresh = useCallback(async () => {
@@ -246,16 +285,19 @@ const formatDateForComparison = (date) => {
     } finally {
       setRefreshing(false);
     }
-  }, [currentYear]); 
+  }, [fetchHolidays, fetchLeavesHistory]); 
 
-  // Recalculate preview when dates change
+  // Recalculate preview when dates or the fetched leave balance change.
+  // calculateLeavePreview is a pure computation derived from the values below;
+  // intentionally excluded from deps to recompute only when these inputs change.
   useEffect(() => {
     if (startDate && rawHolidays.length > 0) {
       calculateLeavePreview(startDate, endDate);
     } else {
       setLeavePreview(null);
     }
-  }, [startDate, endDate, rawHolidays]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate, rawHolidays, leaveBalance]);
 
   const applyLeave = async () => {
     if (!startDate) {
@@ -283,20 +325,18 @@ const formatDateForComparison = (date) => {
       return;
     }
     
+    if (isApplyingLeave) return;
+    setIsApplyingLeave(true);
     try {
       const token = await getToken();
       if (!token) {
         showToast('Session expired. Please log in again.', 'Error');
         return;
       }
-      const response = await axios.post(`${url}/api/leaves/apply`, {
+      const response = await api.post('/api/leaves/apply', {
         reason: description,
         startDate: startDate,
         endDate: effectiveEndDate
-      }, {
-        headers: {
-          authorization: `Bearer ${token}`,
-        }
       });
       
       if (response.data?.message) {
@@ -311,6 +351,8 @@ const formatDateForComparison = (date) => {
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to apply leave"), "Error");
       console.error('Error Applying leave:', error);
+    } finally {
+      setIsApplyingLeave(false);
     }
   };
 
@@ -330,10 +372,6 @@ const formatDateForComparison = (date) => {
       case 'REJECTED': return 'close-circle';
       default: return 'help-circle';
     }
-  };
-
-  const getTypeColor = (type) => {
-    return type === 'PAID' ? '#1e90ff' : '#ff6b35';
   };
 
   const resetModal = () => {
@@ -737,13 +775,19 @@ const formatDateForComparison = (date) => {
                 <TouchableOpacity 
                   style={[
                     styles.submitButton,
-                    !isFormValid() && styles.disabledButton
+                    (!isFormValid() || isApplyingLeave) && styles.disabledButton
                   ]} 
                   onPress={applyLeave}
-                  disabled={!isFormValid()}
+                  disabled={!isFormValid() || isApplyingLeave}
                 >
-                  <MaterialCommunityIcons name="send-outline" size={18} color="#fff" />
-                  <Text style={styles.submitButtonText}>Submit</Text>
+                  {isApplyingLeave ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <MaterialCommunityIcons name="send-outline" size={18} color="#fff" />
+                      <Text style={styles.submitButtonText}>Submit</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -756,520 +800,3 @@ const formatDateForComparison = (date) => {
 }
 
 export default Leave;
-
-const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#0f1419',
-  },
-  container: {
-    padding: 20,
-    paddingBottom: 30,
-  },
-  headerContainer: {
-    marginBottom: 24,
-    alignItems: 'center',
-  },
-  headerText: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 4,
-    letterSpacing: 0.5,
-  },
-  headerSubtext: {
-    fontSize: 14,
-    color: '#8a9ba8',
-    fontWeight: '400',
-  },
-  summaryContainer: {
-    backgroundColor: '#192633',
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(30, 144, 255, 0.2)',
-  },
-  summaryIconContainer: {
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  summaryContent: {
-    gap: 16,
-  },
-  summaryStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 13,
-    color: '#8a9ba8',
-    fontWeight: '500',
-  },
-  statDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: 'rgba(138, 155, 168, 0.3)',
-  },
-  progressBarContainer: {
-    gap: 8,
-  },
-  progressBarBg: {
-    height: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#1e90ff',
-    borderRadius: 4,
-  },
-  progressText: {
-    fontSize: 12,
-    color: '#8a9ba8',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  applyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1e90ff',
-    paddingVertical: 16,
-    borderRadius: 16,
-    marginBottom: 24,
-    gap: 8,
-    shadowColor: '#1e90ff',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  applyButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-    fontSize: 16,
-    letterSpacing: 0.5,
-  },
-  contentContainer: {
-    flex: 1,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#192633',
-    borderRadius: 16,
-    padding: 6,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#2a3441',
-  },
-  selectedTab: {
-    flex: 1,
-    backgroundColor: '#1e90ff',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-    shadowColor: '#1e90ff',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  unselectedTab: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  historyContainer: {
-    gap: 12,
-  },
-  leaveCard: {
-    backgroundColor: '#192633',
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#2a3441',
-  },
-  leaveCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  leaveCardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  leaveCardRight: {
-    alignItems: 'flex-end',
-  },
-  leaveDateText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  leaveDaysText: {
-    color: '#8a9ba8',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  leaveDescription: {
-    color: '#b8c5d1',
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
-  leaveCardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  leaveTypeBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    alignItems: 'center',
-  },
-  leaveTypeText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  holidaysContainer: {
-    gap: 16,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    gap: 12,
-  },
-  loadingText: {
-    color: '#8a9ba8',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    gap: 12,
-  },
-  emptyText: {
-    color: '#8a9ba8',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  holidayMonthCard: {
-    backgroundColor: '#1a2332',
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#2a3441',
-  },
-  holidayMonthTitle: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
-    textAlign: 'center',
-    letterSpacing: 0.5,
-  },
-  holidayGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  holidayCard: {
-    width: '48%',
-    backgroundColor: 'rgba(30, 144, 255, 0.08)',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 144, 255, 0.2)',
-  },
-  holidayDateContainer: {
-    backgroundColor: '#1e90ff',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  holidayDate: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  holidayName: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '500',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  modalBackground: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 20, 25, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalScrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    width: '100%',
-    backgroundColor: '#1a2332',
-    borderRadius: 24,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: '#2a3441',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: 0.5,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  inputLabel: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    letterSpacing: 0.3,
-  },
-  dateInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0f1419',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#2a3441',
-    gap: 12,
-  },
-  errorInput: {
-    borderColor: '#FF5252',
-    backgroundColor: 'rgba(255, 82, 82, 0.1)',
-  },
-  dateText: {
-    fontSize: 15,
-    flex: 1,
-  },
-  descriptionInput: {
-    backgroundColor: '#0f1419',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#2a3441',
-    color: '#ffffff',
-    fontSize: 15,
-    minHeight: 100,
-    textAlignVertical: 'top',
-  },
-  previewContainer: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    width:"100%"
-  },
-  successPreview: {
-    backgroundColor: 'rgba(30, 144, 255, 0.1)',
-    borderColor: 'rgba(30, 144, 255, 0.3)',
-  },
-  errorPreview: {
-    backgroundColor: 'rgba(255, 82, 82, 0.1)',
-    borderColor: 'rgba(255, 82, 82, 0.3)',
-  },
-  previewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  previewTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  errorMessage: {
-    color: '#FF5252',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  previewDetails: {
-    gap: 8,
-  },
-  previewRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  previewLabel: {
-    color: '#8a9ba8',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  previewValue: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  previewDivider: {
-    height: 1,
-    backgroundColor: 'rgba(138, 155, 168, 0.3)',
-    marginVertical: 8,
-  },
-  holidaysList: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(138, 155, 168, 0.2)',
-  },
-  holidaysListTitle: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  holidayItem: {
-    color: '#8a9ba8',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 4,
-  },
-  noteContainer: {
-    backgroundColor: 'rgba(30, 144, 255, 0.1)',
-    borderColor: 'rgba(30, 144, 255, 0.3)',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
-  },
-  noteLabel: {
-    color: '#60A5FA',
-    fontWeight: '600',
-    marginBottom: 6,
-    fontSize: 14,
-  },
-  noteText: {
-    color: '#60A5FA',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-    paddingTop: 8,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButtonText: {
-    color: '#8a9ba8',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  submitButton: {
-    flex: 1,
-    backgroundColor: '#1e90ff',
-    borderRadius: 12,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    shadowColor: '#1e90ff',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  disabledButton: {
-    backgroundColor: '#4a5568',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  submitButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-});

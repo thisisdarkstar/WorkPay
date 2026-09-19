@@ -2,19 +2,16 @@ import AntDesign from '@expo/vector-icons/AntDesign';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import axios from 'axios';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Modal,
-  Platform,
   RefreshControl,
   ScrollView,
   Share,
   StatusBar,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -22,10 +19,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { url } from '../../../constants/EnvValue';
 import { useContextData } from "../../../context/EmployeeContext";
 import { useOfficeContextData } from '../../../context/OfficeContext';
-import { getApiErrorMessage, getToken } from '../../../services/ApiService';
+import { api, getApiErrorMessage, getToken } from '../../../services/ApiService';
+import { styles } from '../../../styles/EmployeeManagementStyles';
 
 function EmployeeManagement() {
   const router = useRouter();
@@ -40,7 +37,7 @@ function EmployeeManagement() {
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const {showToast} = useContextData();
-  const {officeData} = useOfficeContextData();
+  const {officeData, refreshOffices} = useOfficeContextData();
   const [showOfficeList, setShowOfficeList] = useState(false);
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'ACTIVE', 'INACTIVE'
   const [selectedOfficeFilter, setSelectedOfficeFilter] = useState(routeOfficeId || 'ALL');
@@ -77,16 +74,10 @@ function EmployeeManagement() {
   });
 
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
       setLoading(true);
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.get(`${url}/api/employees/getAll`,{
-        headers: {
-          authorization: `Bearer ${token}`
-        }
-      });
+      const response = await api.get('/api/employees/getAll');
       const data = Array.isArray(response.data) ? response.data : [];
       setEmployees(data);
       setFilteredEmployees(data);
@@ -96,45 +87,12 @@ function EmployeeManagement() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [showToast]);
 
   const addEmployee = async () => {
     if (!validateForm()) return;
     try {
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.post(`${url}/api/employees/add`, {
-        name: formData.name,
-        phone: formData.phone,
-        email: formData.email,
-        baseSalary: formData.baseSalary,
-        overtimeRate: formData.overtimeRate,
-        joinedDate: formData.joinedDate,
-        officeId: formData.officeId,
-        accountNumber: formData.accountNumber,
-        ifscCode: formData.ifscCode,
-        password: formData.phone
-      }, {
-        headers: {
-          authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      showToast(response.data?.message || "Employee added successfully", "Success");
-      setModalVisible(false);
-      fetchEmployees();
-    } catch (error) {
-      showToast(getApiErrorMessage(error, "Failed to add employee"), "Error");
-      console.error('Error adding employee:', error);
-    }
-  };
-
-  const editEmployee = async () => {
-    if (!validateForm()) return;
-    try {
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.put(`${url}/api/employees/update/${editingEmployee.id}`, {
+      const response = await api.post('/api/employees/add', {
         name: formData.name,
         phone: formData.phone,
         email: formData.email,
@@ -144,11 +102,42 @@ function EmployeeManagement() {
         officeId: formData.officeId,
         accountNumber: formData.accountNumber,
         ifscCode: formData.ifscCode
-      }, {
-        headers: {
-          authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        // C-03: password is no longer sent from the client. The backend
+        // generates a secure temporary password and returns it once below.
+      });
+      showToast(response.data?.message || "Employee added successfully", "Success");
+      setModalVisible(false);
+      fetchEmployees();
+
+      // C-03: Surface the server-generated temporary password in the existing
+      // copy/share modal so the admin can hand it to the new employee securely.
+      const temporaryPassword = response.data?.temporaryPassword;
+      if (temporaryPassword) {
+        setGeneratedPasswordData({
+          temporaryPassword,
+          employee: response.data?.data || { name: formData.name, phone: formData.phone }
+        });
+        setTempPasswordModalVisible(true);
+      }
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Failed to add employee"), "Error");
+      console.error('Error adding employee:', error);
+    }
+  };
+
+  const editEmployee = async () => {
+    if (!validateForm()) return;
+    try {
+      const response = await api.put(`/api/employees/update/${editingEmployee.id}`, {
+        name: formData.name,
+        phone: formData.phone,
+        email: formData.email,
+        baseSalary: formData.baseSalary,
+        overtimeRate: formData.overtimeRate,
+        joinedDate: formData.joinedDate,
+        officeId: formData.officeId,
+        accountNumber: formData.accountNumber,
+        ifscCode: formData.ifscCode
       });
       showToast(response.data?.message || "Employee updated successfully", "Success");
       setModalVisible(false);
@@ -168,15 +157,8 @@ function EmployeeManagement() {
     if (!employeeToStatusUpdate) return;
     
     try {
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.put(`${url}/api/employees/update-status/${employeeToStatusUpdate.id}`,
-      {
+      const response = await api.put(`/api/employees/update-status/${employeeToStatusUpdate.id}`, {
         status: employeeToStatusUpdate.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
-      }, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
       });
       showToast(response.data?.message || "Status updated", "Success");
       setStatusModalVisible(false);
@@ -214,15 +196,9 @@ function EmployeeManagement() {
         setIsResettingPassword(false);
         return;
       }
-      const response = await axios.post(
-        `${url}/api/employees/admin-reset-password/${employeeToReset.id}`,
-        {},
-        {
-          headers: {
-            authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
+      const response = await api.post(
+        `/api/employees/admin-reset-password/${employeeToReset.id}`,
+        {}
       );
 
       const { temporaryPassword, employee, message } = response.data;
@@ -296,7 +272,8 @@ function EmployeeManagement() {
   useFocusEffect(
     useCallback(() => {
       fetchEmployees();
-    }, [])
+      refreshOffices();
+    }, [fetchEmployees, refreshOffices])
   );
 
   const onRefresh = useCallback(async () => {
@@ -306,7 +283,7 @@ function EmployeeManagement() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [fetchEmployees]);
 
   // Search and filter functionality
   useEffect(() => {
@@ -1041,623 +1018,3 @@ function EmployeeManagement() {
 }
 
 export default EmployeeManagement
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#111a22',
-  },
-  header: {
-    padding: 16,
-    backgroundColor: '#192633',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  addButton: {
-    backgroundColor: '#4A90E2',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  controlDeck: {
-    backgroundColor: '#192633',
-    borderBottomWidth: 1,
-    borderBottomColor: '#2A3441',
-  },
-  searchContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  searchWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#111a22',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 42,
-    borderWidth: 1,
-    borderColor: '#2A3441',
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 15,
-  },
-  branchChipsContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-  },
-  branchChipsScroll: {
-    gap: 8,
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 8,
-  },
-  filterButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    backgroundColor: '#111a22',
-    borderWidth: 1,
-    borderColor: '#2A3441',
-    gap: 6,
-  },
-  filterButtonActive: {
-    backgroundColor: '#4A90E2',
-    borderColor: '#4A90E2',
-  },
-  filterButtonText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#8A9BAE',
-  },
-  filterButtonTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  listContainer: {
-    flex: 1,
-  },
-  listContent: {
-    padding: 16,
-    gap: 12,
-  },
-  employeeCard: {
-    backgroundColor: '#192633',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  cardContent: {
-    marginBottom: 12,
-  },
-  employeeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  avatarContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#4A90E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  employeeDetails: {
-    flex: 1,
-  },
-  employeeName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 2,
-  },
-  employeePhone: {
-    fontSize: 14,
-    color: '#8A9BAE',
-    marginBottom: 2,
-  },
-  employeeRole: {
-    fontSize: 12,
-    color: '#4A90E2',
-    backgroundColor: '#4A90E215',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-  },
-  salaryInfo: {
-    backgroundColor: '#111a22',
-    padding: 12,
-    borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  salaryLabel: {
-    fontSize: 12,
-    color: '#8A9BAE',
-  },
-  salaryAmount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  overtimeRate: {
-    fontSize: 16,
-    color: '#8A9BAE',
-  },
-  cardActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    gap: 3,
-  },
-  viewButton: {
-    backgroundColor: '#4A90E218',
-  },
-  editButton: {
-    backgroundColor: '#F5A62318',
-  },
-  resetButton: {
-    backgroundColor: '#BA68C818',
-  },
-  deactivateButton: {
-    backgroundColor: '#F9731618',
-  },
-  activateButton: {
-    backgroundColor: '#4CAF5018',
-  },
-  deleteButton: {
-    backgroundColor: '#F9731618',
-  },
-  actionText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#192633',
-    borderRadius: 12,
-    width: '100%',
-    maxHeight: '90%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2A3441',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  formContainer: {
-    padding: 20,
-    gap: 16,
-  },
-  inputGroup: {
-    gap: 8,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#FFFFFF',
-  },
-  input: {
-    backgroundColor: '#111a22',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    color: '#FFFFFF',
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#2A3441',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    padding: 20,
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#2A3441',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#8A9BAE',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  saveButton: {
-    flex: 1,
-    backgroundColor: '#4A90E2',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  
-  // Date Picker Styles
-  datePickerButton: {
-    backgroundColor: '#111a22',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#2A3441',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  datePickerText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-  },
-  placeholderText: {
-    color: '#8A9BAE',
-  },
-
-  // Custom Delete Modal Styles
-  deleteModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  deleteModalContent: {
-    backgroundColor: '#192633',
-    borderRadius: 16,
-    padding: 24,
-    width: '90%',
-    maxWidth: 400,
-    alignItems: 'center',
-  },
-  deleteIconContainer: {
-    marginBottom: 20,
-  },
-  deleteIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#58d31115',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#58d31130',
-  },
-  deleteTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  deleteMessage: {
-    fontSize: 16,
-    color: '#8A9BAE',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
-  },
-  employeeNameHighlight: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  deleteModalActions: {
-    flexDirection: 'row',
-    width: '100%',
-    gap: 12,
-  },
-  deleteCancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#2A3441',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  deleteCancelButtonText: {
-    color: '#8A9BAE',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  deleteConfirmButton: {
-    flex: 1,
-    backgroundColor: '#0dc025ff',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    shadowColor: '#0dc025ff',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  deleteConfirmButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  passwordDisplayBox: {
-    backgroundColor: '#111a22',
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#4A90E2',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 10,
-    width: '100%',
-  },
-  passwordDisplayText: {
-    color: '#38BDF8',
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: 4,
-    fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier',
-  },
-  passwordHintText: {
-    fontSize: 12,
-    color: '#8A9BAE',
-    textAlign: 'center',
-    lineHeight: 18,
-    paddingHorizontal: 8,
-  },
-
-  // Redesigned Temporary Password Result Modal Styles
-  resultModalContent: {
-    backgroundColor: '#192633',
-    borderRadius: 18,
-    padding: 24,
-    width: '92%',
-    maxWidth: 400,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2A3441',
-  },
-  resultIconContainer: {
-    marginBottom: 14,
-  },
-  resultIconBadge: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: 'rgba(34, 197, 94, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(34, 197, 94, 0.28)',
-  },
-  resultTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  resultSubtitle: {
-    fontSize: 14,
-    color: '#8A9BAE',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  credentialCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#38BDF835',
-    padding: 14,
-    width: '100%',
-    marginBottom: 12,
-  },
-  credentialHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  credentialLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: 1,
-  },
-  copyChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
-  },
-  copyChipSuccess: {
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    borderColor: 'rgba(34, 197, 94, 0.35)',
-  },
-  copyChipText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#38BDF8',
-  },
-  copyChipTextSuccess: {
-    color: '#22C55E',
-  },
-  passwordRow: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-  },
-  resultInfoBox: {
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: 'rgba(59, 130, 246, 0.08)',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.18)',
-    marginBottom: 20,
-    width: '100%',
-  },
-  resultInfoText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#94A3B8',
-    lineHeight: 18,
-  },
-  resultActionRow: {
-    flexDirection: 'row',
-    width: '100%',
-    gap: 10,
-  },
-  resultDoneButton: {
-    flex: 1,
-    backgroundColor: '#223344',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  resultDoneButtonText: {
-    color: '#E2E8F0',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  resultShareButton: {
-    flex: 1,
-    backgroundColor: '#2563EB',
-    paddingVertical: 12,
-    borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  resultShareButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  branchChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#111a22',
-    borderWidth: 1,
-    borderColor: '#2A3441',
-  },
-  branchChipActive: {
-    backgroundColor: '#4A90E2',
-    borderColor: '#4A90E2',
-  },
-  branchChipText: {
-    fontSize: 13,
-    color: '#8A9BAE',
-    fontWeight: '500',
-  },
-  branchChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  officeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(74, 158, 255, 0.12)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  officeBadgeText: {
-    fontSize: 11,
-    color: '#4A9EFF',
-    fontWeight: '500',
-  },
-});

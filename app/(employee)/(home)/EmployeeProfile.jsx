@@ -1,15 +1,12 @@
 import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import axios from "axios";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { url } from "../../../constants/EnvValue";
 import { useContextData } from "../../../context/EmployeeContext";
-import { getApiErrorMessage, getToken } from "../../../services/ApiService";
+import { api, getApiErrorMessage } from "../../../services/ApiService";
 
 function Profile() {
   const router = useRouter();
@@ -21,6 +18,8 @@ function Profile() {
   const [showOldPassword, setShowOldPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [isUpdatingBank, setIsUpdatingBank] = useState(false);
   const {employeeData, showToast, setEmployeeData} = useContextData();
 
   // Bank details state
@@ -35,15 +34,9 @@ function Profile() {
     }
   }, [employeeData]);
 
-  const fetchDashboardDetails = async () => {
+  const fetchDashboardDetails = useCallback(async () => {
     try {
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.get(`${url}/api/employees/dashboard`, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
-      });
+      const response = await api.get('/api/employees/dashboard');
       const data = response.data;
       if (data?.employeeDetails) {
         setEmployeeData(data.employeeDetails);
@@ -52,7 +45,7 @@ function Profile() {
       showToast(getApiErrorMessage(error, 'Error fetching profile details'), 'Error');
       console.error('Error fetching dashboard details:', error);
     }
-  }
+  }, [setEmployeeData, showToast]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -61,7 +54,7 @@ function Profile() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [fetchDashboardDetails]);
 
   const handlePasswordUpdate = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
@@ -74,8 +67,8 @@ function Profile() {
       return;
     }
     
-    if (newPassword.length < 6) {
-      showToast("New password must be at least 6 characters long", "Warning");
+    if (newPassword.length < 8) {
+      showToast("New password must be at least 8 characters long", "Warning");
       return;
     }
 
@@ -84,19 +77,12 @@ function Profile() {
       return;
     }
 
+    if (isUpdatingPassword) return;
+    setIsUpdatingPassword(true);
     try {
-      const token = await getToken();
-      if (!token) {
-        showToast("Session expired. Please login again.", "Error");
-        return;
-      }
-      const response = await axios.post(`${url}/api/employees/update-password`, {
+      const response = await api.post('/api/employees/update-password', {
         currentPassword: oldPassword,
         newPassword: newPassword
-      }, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
       });
       if (response.data?.message) {
         showToast(response.data.message, "Success");
@@ -108,6 +94,8 @@ function Profile() {
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to update password"), "Error");
       console.error('Error Updating Password:', error);
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
 
@@ -134,19 +122,12 @@ function Profile() {
       return;
     }
 
+    if (isUpdatingBank) return;
+    setIsUpdatingBank(true);
     try {
-      const token = await getToken();
-      if (!token) {
-        showToast("Session expired. Please login again.", "Error");
-        return;
-      }
-      const response = await axios.put(`${url}/api/employees/update-bank`, {
+      const response = await api.put('/api/employees/update-bank', {
         accountNumber: accountNumber,
         ifscCode: ifscCode
-      }, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
       });
       if (response.data?.message) {
         showToast("Bank details updated successfully", "Success");
@@ -156,6 +137,8 @@ function Profile() {
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to update bank details"), "Error");
       console.error('Error Updating Bank Details:', error);
+    } finally {
+      setIsUpdatingBank(false);
     }
   };
 
@@ -171,6 +154,8 @@ function Profile() {
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
           onPress={() => router.back()}
         >
           <Feather name="arrow-left" size={24} color="white" />
@@ -354,10 +339,15 @@ function Profile() {
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
-                  style={styles.updateButton}
+                  style={[styles.updateButton, isUpdatingBank && styles.disabledButton]}
                   onPress={handleBankDetailsUpdate}
+                  disabled={isUpdatingBank}
                 >
-                  <Text style={styles.updateButtonText}>Update</Text>
+                  {isUpdatingBank ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.updateButtonText}>Update</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </Animated.View>
@@ -409,6 +399,8 @@ function Profile() {
                   <TouchableOpacity 
                     onPress={() => setShowOldPassword(!showOldPassword)}
                     style={styles.eyeButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={showOldPassword ? "Hide current password" : "Show current password"}
                   >
                     <Feather 
                       name={showOldPassword ? "eye-off" : "eye"} 
@@ -433,6 +425,8 @@ function Profile() {
                   <TouchableOpacity 
                     onPress={() => setShowNewPassword(!showNewPassword)}
                     style={styles.eyeButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={showNewPassword ? "Hide new password" : "Show new password"}
                   >
                     <Feather 
                       name={showNewPassword ? "eye-off" : "eye"} 
@@ -457,6 +451,8 @@ function Profile() {
                   <TouchableOpacity 
                     onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                     style={styles.eyeButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                   >
                     <Feather 
                       name={showConfirmPassword ? "eye-off" : "eye"} 
@@ -476,10 +472,15 @@ function Profile() {
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
-                  style={styles.updateButton}
+                  style={[styles.updateButton, isUpdatingPassword && styles.disabledButton]}
                   onPress={handlePasswordUpdate}
+                  disabled={isUpdatingPassword}
                 >
-                  <Text style={styles.updateButtonText}>Update</Text>
+                  {isUpdatingPassword ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.updateButtonText}>Update</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </Animated.View>
@@ -694,6 +695,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: "center"
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   updateButtonText: {
     color: '#fff',

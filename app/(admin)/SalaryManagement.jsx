@@ -1,7 +1,6 @@
 import Feather from '@expo/vector-icons/Feather'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
-import axios from 'axios'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useCallback, useState } from 'react'
 import {
@@ -18,10 +17,10 @@ import {
   View
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { url } from '../../constants/EnvValue'
 import { useContextData } from "../../context/EmployeeContext"
 import { useOfficeContextData } from "../../context/OfficeContext"
-import { getApiErrorMessage, getToken } from "../../services/ApiService"
+import { styles } from '../../styles/SalaryManagementStyles'
+import { api, getApiErrorMessage } from "../../services/ApiService"
 
 function AdminSalaryManagement() {
   const router = useRouter()
@@ -48,17 +47,15 @@ function AdminSalaryManagement() {
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [paymentData,setPaymentData] = useState([]);
   const {showToast} = useContextData();
-  const {officeData} = useOfficeContextData();
+  const {officeData, refreshOffices} = useOfficeContextData();
   const [selectedOfficeFilter, setSelectedOfficeFilter] = useState('ALL');
 
 
-   const fetchPaymentHistory = async () => {
+   const fetchPaymentHistory = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${url}/api/transactions/monthly-transactions?year=${selectedYear}&month=${selectedMonth}`, {
-        headers: {
-          authorization: `Bearer ${await getToken()}`,
-        }
+      const response = await api.get('/api/transactions/monthly-transactions', {
+        params: { year: selectedYear, month: selectedMonth },
       });
       const data = response.data;
       setPaymentData(Array.isArray(data?.payments) ? data.payments : []);
@@ -68,13 +65,14 @@ function AdminSalaryManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedYear, selectedMonth, showToast]);
 
   // Sample data - replace with API calls
   useFocusEffect(
     useCallback(() => {
       fetchPaymentHistory();
-    }, [selectedMonth, selectedYear])
+      refreshOffices();
+    }, [fetchPaymentHistory, refreshOffices])
   );
 
   const onRefresh = useCallback(async () => {
@@ -84,7 +82,7 @@ function AdminSalaryManagement() {
     } finally {
       setRefreshing(false);
     }
-  }, [selectedMonth, selectedYear]);
+  }, [fetchPaymentHistory]);
 
 
     const calculateMonthTotals = (transactions) => {
@@ -97,24 +95,6 @@ function AdminSalaryManagement() {
     return { overtime, deduction, advance, bonus };
   };
 
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Paid': return '#7ED321'
-      case 'Pending': return '#F5A623'
-      case 'Due': return '#D0021B'
-      default: return '#8A9BAE'
-    }
-  }
-
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'Paid': return 'check-circle'
-      case 'Pending': return 'clock'
-      case 'Due': return 'alert-circle'
-      default: return 'help-circle'
-    }
-  }
 
   // Month navigation functions
   const handlePrevMonth = () => {
@@ -137,6 +117,46 @@ function AdminSalaryManagement() {
 
   const isNextDisabled = selectedMonth === currentMonth && selectedYear === currentYear
 
+  // Settle / revert salary confirmation modal state
+  const [salaryConfirmVisible, setSalaryConfirmVisible] = useState(false);
+  const [salaryConfirmMode, setSalaryConfirmMode] = useState('settle'); // 'settle' | 'revert'
+  const [salaryConfirmEmployee, setSalaryConfirmEmployee] = useState(null);
+  const [processingSalary, setProcessingSalary] = useState(false);
+
+  // Opens the confirmation modal before settling salary (prevents accidental clicks).
+  const promptSettleSalary = (employee) => {
+    const targetEmpId = Number(employee?.empId || employee?.id);
+    if (!targetEmpId) {
+      showToast('Employee information is missing', 'Error');
+      return;
+    }
+    setSalaryConfirmEmployee(employee);
+    setSalaryConfirmMode('settle');
+    setSalaryConfirmVisible(true);
+  };
+
+  // Opens the confirmation modal before reverting a settled salary.
+  const promptRevertSalary = (employee) => {
+    const targetEmpId = Number(employee?.empId || employee?.id);
+    if (!targetEmpId) {
+      showToast('Employee information is missing', 'Error');
+      return;
+    }
+    setSalaryConfirmEmployee(employee);
+    setSalaryConfirmMode('revert');
+    setSalaryConfirmVisible(true);
+  };
+
+  // Runs the confirmed action (settle or revert).
+  const confirmSalaryAction = async () => {
+    if (!salaryConfirmEmployee || processingSalary) return;
+    if (salaryConfirmMode === 'settle') {
+      await handleSettleSalary(salaryConfirmEmployee);
+    } else {
+      await handleRevertSalary(salaryConfirmEmployee);
+    }
+  };
+
   const handleSettleSalary = async (employee) => {
     const targetEmpId = Number(employee?.empId || employee?.id);
     if (!targetEmpId) {
@@ -147,7 +167,8 @@ function AdminSalaryManagement() {
     const totals = calculateMonthTotals(employee.transactions);
     const finalAmount = Number(employee.baseSalary || 0) + totals.overtime + totals.bonus - totals.deduction - totals.advance;
     try {
-      const response = await axios.post(`${url}/api/transactions/add-transaction`, 
+      setProcessingSalary(true);
+      const response = await api.post('/api/transactions/add-transaction', 
         {
           empId: targetEmpId,
           amount: finalAmount,
@@ -155,20 +176,42 @@ function AdminSalaryManagement() {
           type: "SALARY",
           month: selectedMonth,
           year: selectedYear
-        },
-        {
-          headers: {
-            authorization: `Bearer ${await getToken()}`,
-          }
         }
       );
       const data = response.data;
       showToast(data.message || 'Salary settled successfully', "Success");
+      setSalaryConfirmVisible(false);
+      setSalaryConfirmEmployee(null);
       fetchPaymentHistory();
-      console.log(data);
     } catch (err) {
       showToast(getApiErrorMessage(err, 'Failed to settle salary'), "Error");
-      console.log(err);
+    } finally {
+      setProcessingSalary(false);
+    }
+  };
+
+  // Reverts an accidentally-settled salary by deleting the SALARY transaction.
+  const handleRevertSalary = async (employee) => {
+    const targetEmpId = Number(employee?.empId || employee?.id);
+    if (!targetEmpId) {
+      showToast('Employee information is missing', 'Error');
+      return;
+    }
+    try {
+      setProcessingSalary(true);
+      const response = await api.post('/api/transactions/revert-salary', {
+        empId: targetEmpId,
+        month: selectedMonth,
+        year: selectedYear,
+      });
+      showToast(response.data?.message || 'Salary settlement reverted', "Success");
+      setSalaryConfirmVisible(false);
+      setSalaryConfirmEmployee(null);
+      fetchPaymentHistory();
+    } catch (err) {
+      showToast(getApiErrorMessage(err, 'Failed to revert salary'), "Error");
+    } finally {
+      setProcessingSalary(false);
     }
   };
 
@@ -206,7 +249,7 @@ function AdminSalaryManagement() {
     }
     try {
       setProcessingAdvance(true);
-      const response = await axios.post(`${url}/api/transactions/add-transaction`, 
+      const response = await api.post('/api/transactions/add-transaction', 
         {
           empId: targetEmpId,
           amount: advanceAmount,
@@ -214,11 +257,6 @@ function AdminSalaryManagement() {
           type: "ADVANCE",
           month: selectedMonth,
           year: selectedYear
-        },
-        {
-          headers: {
-            authorization: `Bearer ${await getToken()}`,
-          }
         }
       );
       const data = response.data;
@@ -248,7 +286,7 @@ function AdminSalaryManagement() {
     }
     try {
       setProcessingBonus(true);
-      const response = await axios.post(`${url}/api/transactions/add-transaction`,
+      const response = await api.post('/api/transactions/add-transaction',
         {
           empId: targetEmpId,
           amount: Number(bonusAmount),
@@ -256,11 +294,6 @@ function AdminSalaryManagement() {
           type: "BONUS",
           month: selectedMonth,
           year: selectedYear
-        },
-        {
-          headers: {
-            authorization: `Bearer ${await getToken()}`,
-          }
         }
       );
       const data = response.data;
@@ -292,7 +325,7 @@ function AdminSalaryManagement() {
 
     try {
       setProcessingDeduction(true);
-      const response = await axios.post(`${url}/api/transactions/add-transaction`, 
+      const response = await api.post('/api/transactions/add-transaction', 
         {
           empId: targetEmpId,
           amount: deductionAmount,
@@ -300,11 +333,6 @@ function AdminSalaryManagement() {
           type: "DEDUCTION",
           month: selectedMonth,
           year: selectedYear
-        },
-        {
-          headers: {
-            authorization: `Bearer ${await getToken()}`,
-          }
         }
       );
       const data = response.data;
@@ -414,7 +442,7 @@ function AdminSalaryManagement() {
           {!isPaid && (
             <TouchableOpacity
               style={styles.settleButton}
-              onPress={() => handleSettleSalary(item)}
+              onPress={() => promptSettleSalary(item)}
             >
               <MaterialCommunityIcons name="check-circle" size={16} color="#fff" />
               <Text style={styles.settleButtonText}>Settle Salary</Text>
@@ -450,24 +478,25 @@ function AdminSalaryManagement() {
             </View>
           )}
           
-          {/* Paid Status Indicator */}
+          {/* Paid Status Indicator + Revert option */}
           {isPaid && (
-            <View style={styles.paidIndicator}>
-              <MaterialCommunityIcons name="check-circle" size={16} color="#7ED321" />
-              <Text style={styles.paidText}>Salary Paid</Text>
+            <View style={confirmStyles.paidRow}>
+              <View style={styles.paidIndicator}>
+                <MaterialCommunityIcons name="check-circle" size={16} color="#7ED321" />
+                <Text style={styles.paidText}>Salary Paid</Text>
+              </View>
+              <TouchableOpacity
+                style={confirmStyles.revertButton}
+                onPress={() => promptRevertSalary(item)}
+              >
+                <MaterialCommunityIcons name="undo-variant" size={15} color="#F5A623" />
+                <Text style={confirmStyles.revertButtonText}>Revert</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
       </View>
     );
-  }
-
-  const getCurrentMonthName = () => {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ]
-    return months[currentMonth - 1]
   }
 
   const getSelectedMonthName = () => {
@@ -617,6 +646,87 @@ function AdminSalaryManagement() {
           </View>
         }
       />
+
+      {/* Salary Settle / Revert Confirmation Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={salaryConfirmVisible}
+        onRequestClose={() => !processingSalary && setSalaryConfirmVisible(false)}
+      >
+        <View style={confirmStyles.overlay}>
+          <View style={confirmStyles.card}>
+            <View
+              style={[
+                confirmStyles.iconCircle,
+                { backgroundColor: salaryConfirmMode === 'settle' ? 'rgba(126,211,33,0.12)' : 'rgba(245,166,35,0.12)' },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={salaryConfirmMode === 'settle' ? 'check-decagram' : 'undo-variant'}
+                size={30}
+                color={salaryConfirmMode === 'settle' ? '#7ED321' : '#F5A623'}
+              />
+            </View>
+
+            <Text style={confirmStyles.title}>
+              {salaryConfirmMode === 'settle' ? 'Settle Salary?' : 'Revert Salary?'}
+            </Text>
+
+            <Text style={confirmStyles.message}>
+              {salaryConfirmMode === 'settle' ? (
+                <>
+                  Settle salary for{' '}
+                  <Text style={confirmStyles.highlight}>{salaryConfirmEmployee?.name || 'this employee'}</Text>
+                  {' '}for {getSelectedMonthName()} {selectedYear}?{'\n'}
+                  Final payout:{' '}
+                  <Text style={confirmStyles.highlight}>
+                    ₹{(() => {
+                      const t = calculateMonthTotals(salaryConfirmEmployee?.transactions);
+                      const b = Number(salaryConfirmEmployee?.baseSalary || 0);
+                      return (b + t.overtime + t.bonus - t.deduction - t.advance).toLocaleString();
+                    })()}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  This will undo the salary settlement for{' '}
+                  <Text style={confirmStyles.highlight}>{salaryConfirmEmployee?.name || 'this employee'}</Text>
+                  {' '}for {getSelectedMonthName()} {selectedYear}. Other transactions (advance, deduction, bonus, overtime) are not affected.
+                </>
+              )}
+            </Text>
+
+            <View style={confirmStyles.buttonRow}>
+              <TouchableOpacity
+                style={confirmStyles.cancelButton}
+                onPress={() => setSalaryConfirmVisible(false)}
+                disabled={processingSalary}
+              >
+                <Text style={confirmStyles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  confirmStyles.confirmButton,
+                  { backgroundColor: salaryConfirmMode === 'settle' ? '#2E7D32' : '#B7791F' },
+                  processingSalary && { opacity: 0.6 },
+                ]}
+                onPress={confirmSalaryAction}
+                disabled={processingSalary}
+              >
+                {processingSalary ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={confirmStyles.confirmText}>
+                    {salaryConfirmMode === 'settle' ? 'Settle' : 'Revert'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Advance Payment Modal */}
       <Modal
@@ -917,486 +1027,107 @@ function AdminSalaryManagement() {
 
 export default AdminSalaryManagement
 
-const styles = StyleSheet.create({
-  container: {
+// Local styles for the settle/revert confirmation modal and the paid-row layout.
+const confirmStyles = StyleSheet.create({
+  overlay: {
     flex: 1,
-    backgroundColor: '#111a22',
-  },
-  header: {
-    padding: 16,
-    backgroundColor: '#192633',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  headerSpacer: {
-    width: 32,
-  },
-  loadingText: {
-    color: '#fff',
-    fontSize: 18,
-    textAlign: 'center',
-    marginTop: 50,
-  },
-
-  // Month Overview
-  monthOverview: {
-    backgroundColor: '#192633',
-    margin: 16,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  monthInfo: {
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  monthTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  monthSubtitle: {
-    fontSize: 14,
-    color: '#8A9BAE',
-    marginTop: 4,
-  },
-  monthStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statItem: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#8A9BAE',
-  },
-
-  // List Content
-  listContent: {
-    padding: 16,
-    gap: 12,
-  },
-
-  // Employee Cards
-  employeeCard: {
-    backgroundColor: '#192633',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  employeeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 12,
-  },
-  employeeAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#4A90E2',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.72)',
     justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  employeeBasicInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  employeeName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  employeePhone: {
-    fontSize: 12,
-    color: '#8A9BAE',
-  },
-  statusContainer: {
-    alignItems: 'flex-end',
-  },
-  statusBadge: {
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    gap: 4,
+    paddingHorizontal: 28,
   },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-
-  // Salary Breakdown
-  salaryBreakdown: {
-    backgroundColor: '#111a22',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    gap: 8,
-  },
-  salaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  salaryLabel: {
-    fontSize: 13,
-    color: '#8A9BAE',
-  },
-  salaryAmount: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#FFFFFF',
-  },
-  finalSalaryRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#2A3441',
-    paddingTop: 8,
-    marginTop: 4,
-  },
-  finalSalaryLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  finalSalaryAmount: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#7ED321',
-  },
-
-  // Action Buttons
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  settleButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#7ED321',
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-    minWidth: '100%',
-  },
-  settleButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  secondaryActionsRow: {
-    flexDirection: 'row',
-    gap: 6,
+  card: {
     width: '100%',
-  },
-  advanceButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4A90E220',
-    paddingVertical: 9,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    gap: 4,
-  },
-  advanceButtonText: {
-    color: '#4A90E2',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  deductionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F5A62320',
-    paddingVertical: 9,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    gap: 4,
-  },
-  deductionButtonText: {
-    color: '#F5A623',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  bonusButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10B98120',
-    paddingVertical: 9,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    gap: 4,
-  },
-  bonusButtonText: {
-    color: '#10B981',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  paidIndicator: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#7ED32120',
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-  },
-  paidText: {
-    color: '#7ED321',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
+    maxWidth: 360,
     backgroundColor: '#192633',
-    borderRadius: 12,
-    padding: 20,
-    width: '90%',
-    maxWidth: 400,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  modalCloseButton: {
-    padding: 4,
-  },
-  modalBody: {
-    gap: 16,
-  },
-  modalEmployeeName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  modalEmployeePhone: {
-    fontSize: 14,
-    color: '#8A9BAE',
-  },
-  salaryInfoModal: {
-    backgroundColor: '#111a22',
-    borderRadius: 8,
-    padding: 12,
-    gap: 8,
-  },
-  modalSalaryLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  modalSalaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  modalSalaryText: {
-    fontSize: 13,
-    color: '#8A9BAE',
-  },
-  modalSalaryAmount: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#FFFFFF',
-  },
-  maxAdvanceRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#2A3441',
-    paddingTop: 8,
-    marginTop: 4,
-  },
-  inputContainer: {
-    gap: 8,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  advanceInput: {
-    backgroundColor: '#111a22',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#2A3441',
+    paddingTop: 24,
+    paddingBottom: 20,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    elevation: 10,
   },
-  descriptionInput: {
-    minHeight: 80,
-    paddingTop: 12,
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
   },
-  modalActions: {
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: 13.5,
+    color: '#8A9BAE',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 22,
+  },
+  highlight: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  buttonRow: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 8,
+    width: '100%',
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#2A3441',
     paddingVertical: 12,
     borderRadius: 8,
+    backgroundColor: '#111a22',
+    borderWidth: 1,
+    borderColor: '#2A3441',
     alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#8A9BAE',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  processButton: {
-    flex: 1,
-    backgroundColor: '#4A90E2',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    flexDirection: 'row',
     justifyContent: 'center',
-    gap: 6,
   },
-  processButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  cancelText: {
+    color: '#8A9BAE',
+    fontSize: 14,
     fontWeight: '600',
   },
-  disabledButton: {
-    opacity: 0.6,
+  confirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-
-  // Month Navigation
-  monthNavigation: {
+  confirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  paidRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    gap: 12,
   },
-  navButton: {
-    padding: 8,
-  },
-
-  // Overdue Alert
-  overdueAlert: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#D0021B20',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 12,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#D0021B40',
-  },
-  overdueAlertText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#D0021B',
-    fontWeight: '500',
-  },
-
-  // Details Button
-  detailsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2A3441',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    gap: 4,
-  },
-  detailsButtonText: {
-    color: '#8A9BAE',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  branchChip: {
+  revertButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 8,
-    backgroundColor: '#192633',
+    backgroundColor: 'rgba(245,166,35,0.12)',
     borderWidth: 1,
-    borderColor: '#2A3441',
+    borderColor: 'rgba(245,166,35,0.4)',
   },
-  branchChipActive: {
-    backgroundColor: '#4A90E2',
-    borderColor: '#4A90E2',
-  },
-  branchChipText: {
+  revertButtonText: {
+    color: '#F5A623',
     fontSize: 13,
-    color: '#8A9BAE',
-    fontWeight: '500',
+    fontWeight: '700',
   },
-  branchChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  officeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(74, 158, 255, 0.12)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  officeBadgeText: {
-    fontSize: 11,
-    color: '#4A9EFF',
-    fontWeight: '500',
-  },
-})
+});
+
