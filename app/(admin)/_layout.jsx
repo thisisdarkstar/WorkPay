@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AdBanner } from '../../components/ads/AdBanner';
+import { useAuthGuard } from '../../hooks/useAuthGuard';
 
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
@@ -78,6 +79,16 @@ function CustomTabBar({ state, descriptors, navigation }) {
 }
 
 function AdminLayout() {
+  const { checking, authorized } = useAuthGuard('admin');
+
+  if (checking || !authorized) {
+    return (
+      <View style={styles.guardContainer}>
+        <ActivityIndicator size="large" color="#1e90ff" />
+      </View>
+    );
+  }
+
   return (
     <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <CustomTabBar {...props} />}>
       <Tabs.Screen name="(dashboard)"  options={{ title: 'Dashboard' }} />
@@ -91,6 +102,12 @@ function AdminLayout() {
 export default AdminLayout;
 
 const styles = StyleSheet.create({
+  guardContainer: {
+    flex: 1,
+    backgroundColor: '#111a22',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   tabBarWrapper: {
     backgroundColor: '#192633',
   },

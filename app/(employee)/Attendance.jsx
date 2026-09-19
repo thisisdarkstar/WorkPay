@@ -1,5 +1,4 @@
 import Feather from "@expo/vector-icons/Feather";
-import axios from "axios";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -7,9 +6,8 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DataCard from "../../components/Attendance/DataCard";
-import { url } from "../../constants/EnvValue";
 import { useContextData } from "../../context/EmployeeContext";
-import { getApiErrorMessage, getToken } from "../../services/ApiService";
+import { api, getApiErrorMessage } from "../../services/ApiService";
 import { calculateTotalOvertime, countAbsentDays, countPresentDays, getTotalDaysInMonth } from "../../utils/TimeUtils";
 
 const months = [
@@ -67,15 +65,11 @@ function Attendance() {
     }
   };
 
-  const fetchAttendanceData = async () => {
+  const fetchAttendanceData = useCallback(async () => {
     try {
       setLoading(true);
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.get(`${url}/api/attendances/getAttendance?month=${currentMonth}&year=${currentYear}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        }
+      const response = await api.get('/api/attendances/getAttendance', {
+        params: { month: currentMonth, year: currentYear },
       });
       setAttendanceData(response.data);
     } catch (error) {
@@ -84,12 +78,12 @@ function Attendance() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentMonth, currentYear, showToast]);
 
   useFocusEffect(
     useCallback(() => {
       fetchAttendanceData();
-    }, [currentMonth, currentYear])
+    }, [fetchAttendanceData])
   );
 
   const onRefresh = useCallback(async () => {
@@ -99,7 +93,7 @@ function Attendance() {
     } finally {
       setRefreshing(false);
     }
-  }, [currentMonth, currentYear]);
+  }, [fetchAttendanceData]);
 
   // Disable right arrow if at today's month/year
   const isNextDisabled =

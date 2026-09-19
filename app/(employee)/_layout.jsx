@@ -1,8 +1,9 @@
 import { Tabs } from 'expo-router';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AdBanner } from '../../components/ads/AdBanner';
+import { useAuthGuard } from '../../hooks/useAuthGuard';
 
 function CustomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
@@ -56,6 +57,8 @@ switch (route.name.toLowerCase()) {
           <TouchableOpacity
             key={route.key}
             accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={typeof label === 'string' ? label : route.name}
             onPress={onPress}
             style={styles.tab}
           >
@@ -76,6 +79,16 @@ switch (route.name.toLowerCase()) {
 }
 
 export default function EmployeeLayout() {
+  const { checking, authorized } = useAuthGuard('employee');
+
+  if (checking || !authorized) {
+    return (
+      <View style={styles.guardContainer}>
+        <ActivityIndicator size="large" color="#1e90ff" />
+      </View>
+    );
+  }
+
   return (
     <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <CustomTabBar {...props} />}>
       <Tabs.Screen name="(home)" options={{ title: 'Home' }} />
@@ -87,6 +100,12 @@ export default function EmployeeLayout() {
 }
 
 const styles = StyleSheet.create({
+  guardContainer: {
+    flex: 1,
+    backgroundColor: '#111a22',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   tabBarWrapper: {
     backgroundColor: '#192633',
   },

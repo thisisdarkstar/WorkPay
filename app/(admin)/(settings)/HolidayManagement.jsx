@@ -1,7 +1,6 @@
 import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import axios from "axios";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -16,9 +15,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { url } from "../../../constants/EnvValue";
 import { useContextData } from "../../../context/EmployeeContext";
-import { getApiErrorMessage, getToken } from "../../../services/ApiService";
+import { api, getApiErrorMessage } from "../../../services/ApiService";
 
 function HolidayManagement() {
   const currentYear = new Date().getFullYear();
@@ -34,14 +32,10 @@ function HolidayManagement() {
   const router = useRouter();
   const {showToast} = useContextData()
 
-  const fetchHolidays = async () => {
+  const fetchHolidays = useCallback(async () => {
     try {
       setIsLoading(true);
-      const response = await axios.get(`${url}/api/holidays/getAll`, {
-        headers: {
-          authorization: `Bearer ${await getToken()}`
-        }
-      });
+      const response = await api.get('/api/holidays/getAll');
       
       const raw = Array.isArray(response.data) ? response.data : [];
       const transformedHolidays = raw.map(monthItem => ({
@@ -61,7 +55,7 @@ function HolidayManagement() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentYear, showToast]);
 
   const addHoliday = async () => {
     if (!holidayDate || !holidayName.trim()) {
@@ -76,13 +70,9 @@ function HolidayManagement() {
       const d = String(holidayDate.getDate()).padStart(2, '0');
       const formattedDateString = `${y}-${m}-${d}`;
 
-      const response = await axios.post(`${url}/api/holidays/add`, {
+      await api.post('/api/holidays/add', {
         description: holidayName,
         date: formattedDateString
-      }, {
-        headers: {
-          authorization: `Bearer ${await getToken()}`
-        }
       });
 
       showToast( 'Holiday added successfully!','Success');
@@ -110,11 +100,7 @@ function HolidayManagement() {
 
     try {
       setIsLoading(true);
-      await axios.delete(`${url}/api/holidays/delete/${holidayToDelete.id}`, {
-        headers: {
-          authorization: `Bearer ${await getToken()}`
-        }
-      });
+      await api.delete(`/api/holidays/delete/${holidayToDelete.id}`);
 
       showToast('Holiday deleted successfully!','Success');
       setDeleteModalVisible(false);
@@ -138,7 +124,7 @@ function HolidayManagement() {
   useFocusEffect(
     useCallback(() => {
       fetchHolidays();
-    }, [])
+    }, [fetchHolidays])
   );
 
   const onRefresh = useCallback(async () => {
@@ -148,7 +134,7 @@ function HolidayManagement() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [fetchHolidays]);
 
   const getTotalHolidays = () => {
     return holidays.reduce((acc, m) => acc + (Array.isArray(m?.holidays) ? m.holidays.length : 0), 0);

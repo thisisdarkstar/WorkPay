@@ -1,13 +1,11 @@
 import AntDesign from '@expo/vector-icons/AntDesign';
 import Feather from '@expo/vector-icons/Feather';
-import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
-import { getApiErrorMessage, getToken } from '../../../services/ApiService';
+import { api, getApiErrorMessage } from '../../../services/ApiService';
 
 function AttendanceStatus() {
   const router = useRouter();
@@ -17,19 +15,10 @@ function AttendanceStatus() {
   const { id, status, officeName } = useLocalSearchParams();
   const { showToast } = useContextData();
 
-  const fetchEmployeesData = async () => {
+  const fetchEmployeesData = useCallback(async () => {
     try {
       setLoading(true);
-      const token = await getToken();
-      if (!token) return;
-      let apiUrl = `${url}/api/attendances/getEmployeesByStatus/${id}/${status}`;
-
-      const response = await axios.get(apiUrl, {
-        headers: {
-          authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        }
-      });
+      const response = await api.get(`/api/attendances/getEmployeesByStatus/${id}/${status}`);
       setEmployees(response.data?.employees || []);
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to load employee status"), "Error");
@@ -37,11 +26,11 @@ function AttendanceStatus() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, status, showToast]);
 
   useEffect(() => {
     fetchEmployeesData();
-  }, [id, status]);
+  }, [fetchEmployeesData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -50,7 +39,7 @@ function AttendanceStatus() {
     } finally {
       setRefreshing(false);
     }
-  }, [id, status]);
+  }, [fetchEmployeesData]);
 
   const getStatusColor = (statusVal) => {
     switch(statusVal) {

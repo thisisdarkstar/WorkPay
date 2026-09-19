@@ -41,28 +41,51 @@ export function formatMinutesToHHMM(totalMinutes) {
 }
 
 
+/**
+ * Robustly parse a clock-time string into minutes-since-midnight.
+ * Accepts:
+ *   - 12-hour with meridiem, with or without a space: "9:05 AM", "09:05AM", "12:00 pm"
+ *   - 24-hour: "09:05", "23:45"
+ * Returns null when the input cannot be parsed so callers can detect failure
+ * instead of silently treating a bad value as midnight (00:00).
+ */
+export function parseClockTimeToMinutes(timeStr) {
+    if (typeof timeStr !== 'string') return null;
+    const str = timeStr.trim();
+    if (!str) return null;
+
+    // Match "H:MM" or "HH:MM" optionally followed by AM/PM (any spacing/case).
+    const match = str.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/);
+    if (!match) return null;
+
+    let hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const meridiem = match[3] ? match[3].toLowerCase() : null;
+
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+    if (minutes < 0 || minutes > 59) return null;
+
+    if (meridiem) {
+        // 12-hour clock: valid hours are 1..12
+        if (hours < 1 || hours > 12) return null;
+        if (meridiem === 'pm' && hours !== 12) hours += 12;
+        else if (meridiem === 'am' && hours === 12) hours = 0;
+    } else {
+        // 24-hour clock: valid hours are 0..23
+        if (hours < 0 || hours > 23) return null;
+    }
+
+    return hours * 60 + minutes;
+}
+
 export function calculateHoursManual(checkin, checkout) {
     if (!checkin || !checkout) return "00:00"; // fallback when data not ready
 
-    function parseTime(timeStr) {
-        if (!timeStr || typeof timeStr !== 'string') return 0;
-        const parts = timeStr.trim().split(' ');
-        if (parts.length < 2) return 0;
-        const [time, period] = parts;
-        const [hours, minutes] = time.split(':').map(Number);
-        
-        let hour24 = hours || 0;
-        if (period && period.toLowerCase() === 'pm' && hours !== 12) {
-            hour24 += 12;
-        } else if (period && period.toLowerCase() === 'am' && hours === 12) {
-            hour24 = 0;
-        }
-        
-        return hour24 * 60 + (minutes || 0); // total minutes
-    }
-    
-    const checkinMinutes = parseTime(checkin);
-    const checkoutMinutes = parseTime(checkout);
+    const checkinMinutes = parseClockTimeToMinutes(checkin);
+    const checkoutMinutes = parseClockTimeToMinutes(checkout);
+
+    // If either value can't be parsed, don't fabricate a misleading duration.
+    if (checkinMinutes === null || checkoutMinutes === null) return "00:00";
 
     let diffMinutes = checkoutMinutes - checkinMinutes;
 

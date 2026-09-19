@@ -1,12 +1,11 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
-import axios from 'axios'
 import { useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { url } from '../../constants/EnvValue'
 import { useContextData } from '../../context/EmployeeContext'
-import { getApiErrorMessage, getToken } from '../../services/ApiService'
+import { api, getApiErrorMessage } from '../../services/ApiService'
+import { styles } from '../../styles/PaymentStyles'
 
 
 const months = [
@@ -65,13 +64,14 @@ function Payment() {
     return { overtime, deduction, advance, bonus };
   };
 
-  // Helper function to determine payment status
+  // Helper function to determine payment status.
+  // The backend is the single source of truth: it sets `isPaid` when a SALARY
+  // transaction exists for the month. We trust that flag rather than
+  // re-deriving it on the client (which risked disagreeing with the server).
   const getPaymentStatus = (monthData) => {
-    if (monthData?.isPaid) return { text: "PAID", isPaid: true };
-    const transactions = monthData?.transactions || [];
-    const hasSalary = transactions.some(t => t.payType === "SALARY");
-    if (hasSalary) return { text: "PAID", isPaid: true };
-    return { text: "PENDING", isPaid: false };
+    return monthData?.isPaid
+      ? { text: "PAID", isPaid: true }
+      : { text: "PENDING", isPaid: false };
   };
 
   const getSalaryPaidDate = (monthData) => {
@@ -80,15 +80,11 @@ function Payment() {
     return salaryTx?.date || null;
   };
 
-  const fetchPaymentHistory = async () => {
+  const fetchPaymentHistory = useCallback(async () => {
     try {
       setLoading(true);
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.get(`${url}/api/transactions/employee?year=${selectedYear}`, {
-        headers: {
-          authorization: `Bearer ${token}`,
-        }
+      const response = await api.get('/api/transactions/employee', {
+        params: { year: selectedYear },
       });
       const data = response.data;
       setPaymentData(data);
@@ -98,12 +94,12 @@ function Payment() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedYear, showToast]);
 
   useFocusEffect(
     useCallback(() => {
       fetchPaymentHistory();
-    }, [selectedYear])
+    }, [fetchPaymentHistory])
   );
 
   const onRefresh = useCallback(async () => {
@@ -113,7 +109,7 @@ function Payment() {
     } finally {
       setRefreshing(false);
     }
-  }, [selectedYear]);
+  }, [fetchPaymentHistory]);
 
   // Current month calculations
   const isBeforeJoining = paymentData?.currentTransaction?.isBeforeJoining;
@@ -268,14 +264,16 @@ function Payment() {
                   const monthTotal = (monthData.baseSalary || 0) + monthTotals.overtime + monthTotals.bonus - monthTotals.deduction - monthTotals.advance;
                   const statusInfo = getPaymentStatus(monthData);
                   const salaryDate = getSalaryPaidDate(monthData);
-                  const itemId = `${monthData.month}- ${selectedYear}- ${index}`;
-                  const isOpen = expanded === index;
+                  // Stable id per month so the correct card stays expanded even if
+                  // the list order changes (BUG-005). Falls back to index if month missing.
+                  const itemKey = monthData.month ? `${monthData.month}-${selectedYear}` : `row-${index}`;
+                  const isOpen = expanded === itemKey;
 
                   return (
-                    <View style={styles.historyCard} key={index}>
+                    <View style={styles.historyCard} key={itemKey}>
                       <TouchableOpacity 
                         style={styles.historyCardHeader}
-                        onPress={() => setExpanded(isOpen ? null : index)}
+                        onPress={() => setExpanded(isOpen ? null : itemKey)}
                         activeOpacity={0.7}
                       >
                         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -351,185 +349,3 @@ function Payment() {
 }
 
 export default Payment
-
-const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#111a22',
-  },
-  salaryOverviewContainer: {
-    backgroundColor: '#192633',
-    borderRadius: 8,
-    padding: 16,
-    marginVertical: 12,
-    width: '90%',
-    alignSelf: "center",
-    gap: 20,
-  },
-  headerContainer: {
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 4,
-  },
-  headerText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  headerSubText: {
-    fontSize: 14,
-    color: '#ccc',
-    textAlign: 'center',
-  },
-  detailsContainer:{
-    width:"100%",
-    gap:10
-  },
-  detailItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  detailText: {
-    fontSize: 16,
-    color: '#fff',
-  },
-  detailAmount: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  alert: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "flex-start",
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: "rgba(77, 166, 255, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(77, 166, 255, 0.3)",
-    marginTop: 12,
-    gap: 10,
-  },
-  alertText: {
-    flex: 1,
-    fontSize: 14,
-    color: "#cce6ff",
-  },
-  historyContainer: {
-    backgroundColor: '#192633',
-    borderRadius: 8,
-    padding: 16,
-    width: '90%',
-    alignSelf: "center",
-    gap:15
-  },
-  historyText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  historySubText: {
-    fontSize: 14,
-    color: '#ccc',
-    marginTop: 10,
-  },
-  dropdownButton: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#2a323d",
-    padding: 12,
-    borderRadius: 6,
-  },
-  dropdownButtonText: {
-    color: "#fff",
-    fontSize: 16,
-  },
-  dropdownList: {
-    backgroundColor: "#2a323d",
-    marginTop: 6,
-    borderRadius: 6,
-  },
-  dropdownItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#444",
-  },
-  dropdownItemText: {
-    color: "#fff",
-    fontSize: 16,
-  },
-  historyCard: {
-    backgroundColor: "#2a323d",
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  historyCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 14,
-  },
-  historyCardTitle: {
-    fontSize: 16,
-    color: "#fff",
-    flex: 1,
-  },
-  historyCardAmount: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#fff",
-    marginLeft: 10,
-  },
-  status: {
-    fontSize: 14,
-    marginHorizontal: 10,
-  },
-  historyCardDetails: {
-    paddingHorizontal: 14,
-    paddingBottom: 14,
-    gap: 10,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  loadingText: {
-    color: '#ccc',
-    fontSize: 16,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-    gap: 10,
-  },
-  emptyText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  emptySubText: {
-    color: '#ccc',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 5,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  statusBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  }
-})

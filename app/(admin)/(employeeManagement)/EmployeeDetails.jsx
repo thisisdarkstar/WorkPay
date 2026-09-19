@@ -1,7 +1,6 @@
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -15,9 +14,8 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
-import { getApiErrorMessage, getToken } from '../../../services/ApiService';
+import { api, getApiErrorMessage } from '../../../services/ApiService';
 import {
   calculateTotalHours,
   calculateTotalOvertime,
@@ -92,85 +90,69 @@ function EmployeeDetails() {
   const [paymentsData,setPaymentsData]=  useState(null);
     const {showToast} = useContextData();
 
-    const fetchEmployeeDetails = async () => {
+    const fetchEmployeeDetails = useCallback(async () => {
     try {
-      const response = await axios.get(`${url}/api/employees/get/${id}`, {
-        headers: {
-          authorization: `Bearer ${await getToken()}`
-        }
-      });
+      const response = await api.get(`/api/employees/get/${id}`);
       setEmployee(response.data.data);
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Failed to fetch employee details'),'Error');
     }
-  }
+  }, [id, showToast])
 
-    const fetchAttendanceData = async () => {
+    const fetchAttendanceData = useCallback(async () => {
     try{
-      const response = await axios.get(`${url}/api/attendances/getEmployeeAttendance?empId=${id}&month=${currentMonth}&year=${currentYear}`
-        ,{
-          headers: {
-            Authorization: `Bearer ${await getToken()}`,
-        }
-      }
-      );
+      const response = await api.get('/api/attendances/getEmployeeAttendance', {
+        params: { empId: id, month: currentMonth, year: currentYear },
+      });
       const data = response.data;
       setAttendanceData(data);
     }catch(error){
       showToast(getApiErrorMessage(error, 'Failed to fetch attendance data'),'Error');
     }
-  };
+  }, [id, currentMonth, currentYear, showToast]);
 
   // Sample employee data - replace with API call
   useEffect(() => {
     fetchEmployeeDetails();
-  }, [id]);
+  }, [fetchEmployeeDetails]);
 
   useEffect(()=>{
  fetchAttendanceData()
-  },[currentMonth,currentYear])
+  },[fetchAttendanceData])
 
 
-const fetchLeavesData = async ()=>{
+const fetchLeavesData = useCallback(async ()=>{
   try{
-      const response = await axios.get(`${url}/api/leaves/get/employee-leaves?empId=${id}&year=${selectedLeaveYear}`
-        ,{
-          headers: {
-            Authorization: `Bearer ${await getToken()}`,
-        }
-      }
-      );
+      const response = await api.get('/api/leaves/get/employee-leaves', {
+        params: { empId: id, year: selectedLeaveYear },
+      });
       const data = response.data;
       setLeavesData(data)
     }catch(error){
       showToast(getApiErrorMessage(error, 'Failed to fetch leaves data'),'Error');
     }
-}
+}, [id, selectedLeaveYear, showToast])
 
 useEffect(()=>{
   fetchLeavesData();
-},[id,selectedLeaveYear])
+},[fetchLeavesData])
 
 
-const fetchPaymentsData = async ()=>{
+const fetchPaymentsData = useCallback(async ()=>{
     try{
-      const response = await axios.get(`${url}/api/transactions/get/monthly-transactions?empId=${id}&year=${selectedPaymentYear}`
-        ,{
-          headers: {
-            Authorization: `Bearer ${await getToken()}`,
-        }
-      }
-      );
+      const response = await api.get('/api/transactions/get/monthly-transactions', {
+        params: { empId: id, year: selectedPaymentYear },
+      });
       const data = response.data;
       setPaymentsData(data)
     }catch(error){
       showToast(getApiErrorMessage(error, 'Failed to fetch payment history'),'Error');
     }
-}
+}, [id, selectedPaymentYear, showToast])
 
 useEffect(()=>{
   fetchPaymentsData();
-},[id,selectedPaymentYear])
+},[fetchPaymentsData])
   
 
   // Generate years for dropdown from employee's joinedDate year to current year
@@ -205,7 +187,7 @@ useEffect(()=>{
     } finally {
       setRefreshing(false);
     }
-  }, [activeTab, id, currentMonth, currentYear, selectedPaymentYear, selectedLeaveYear]);
+  }, [activeTab, fetchEmployeeDetails, fetchAttendanceData, fetchPaymentsData, fetchLeavesData]);
 
 
   // Handle month navigation

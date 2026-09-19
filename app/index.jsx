@@ -1,5 +1,4 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import axios from 'axios';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -16,9 +15,8 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
-import { url } from "../constants/EnvValue";
 import { useContextData } from "../context/EmployeeContext";
-import { getActiveSession, getApiErrorMessage, storeToken } from '../services/ApiService';
+import { api, getActiveSession, getApiErrorMessage, storeToken } from '../services/ApiService';
 import { AdBanner } from '../components/ads/AdBanner';
 
 function IndexScreen() {
@@ -90,7 +88,7 @@ function IndexScreen() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [router]);
 
     // Clear errors when switching tabs
   const clearErrors = () => {
@@ -121,14 +119,9 @@ function IndexScreen() {
 
     setIsLoading(true);
     try {
-      const response = await axios.post(`${url}/api/employees/login`, {
+      const response = await api.post('/api/employees/login', {
         phone: employeeLogin.phone,
         password: employeeLogin.password,
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        }
       });
 
       if (response.data?.token) {
@@ -171,7 +164,7 @@ function IndexScreen() {
 
     setIsLoading(true);
     try {
-      const response = await axios.post(`${url}/api/admins/login`, {
+      const response = await api.post('/api/admins/login', {
         email: adminLogin.email,
         password: adminLogin.password,
       });
@@ -308,6 +301,8 @@ function IndexScreen() {
                   <TouchableOpacity 
                     onPress={() => setShowPassword(!showPassword)}
                     style={styles.eyeIcon}
+                    accessibilityRole="button"
+                    accessibilityLabel={showPassword ? "Hide password" : "Show password"}
                   >
                     <MaterialCommunityIcons 
                       name={showPassword ? "eye-off" : "eye"} 
@@ -386,6 +381,8 @@ function IndexScreen() {
                   <TouchableOpacity 
                     onPress={() => setShowPassword(!showPassword)}
                     style={styles.eyeIcon}
+                    accessibilityRole="button"
+                    accessibilityLabel={showPassword ? "Hide password" : "Show password"}
                   >
                     <MaterialCommunityIcons 
                       name={showPassword ? "eye-off" : "eye"} 
@@ -421,14 +418,15 @@ function IndexScreen() {
           )}
 
           {/* forgot password button */}
-          {/* <TouchableOpacity 
-                onPress={() => router.push({ 
-                pathname: '/ForgotPassword', 
-                params: { isEmployee: isEmployee } 
-              })}
- style={styles.forgotPassword}>
+          <TouchableOpacity
+            onPress={() => router.push({
+              pathname: '/ForgotPassword',
+              params: { isEmployee: isEmployee }
+            })}
+            style={styles.forgotPassword}
+          >
             <Text style={styles.forgotPasswordText}>Forgot your password?</Text>
-          </TouchableOpacity> */}
+          </TouchableOpacity>
         </View>
       </View>
 

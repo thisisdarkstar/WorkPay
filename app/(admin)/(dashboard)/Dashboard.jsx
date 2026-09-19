@@ -2,15 +2,13 @@ import AntDesign from '@expo/vector-icons/AntDesign';
 import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import axios from 'axios';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
 import { useOfficeContextData } from '../../../context/OfficeContext';
-import { getApiErrorMessage, getToken, removeToken } from '../../../services/ApiService';
+import { api, getApiErrorMessage, removeToken } from '../../../services/ApiService';
 import { formatDay } from "../../../utils/TimeUtils";
 
 
@@ -20,27 +18,19 @@ function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isAttendanceFinalized, setIsAttendanceFinalized] = useState(false);
-  const {showToast} = useContextData();
+  const {showToast, setEmployeeData} = useContextData();
   const {setOfficeData} = useOfficeContextData();
   const [currentOffice,setCurrentOffice] = useState('all');  
   const [showOfficeList,setShowOfficeList] = useState(false);
   const [isEmployeesAvailable,setIsEmployeesAvailable] = useState(false);
 
   const [autoFinalizeDisplay, setAutoFinalizeDisplay] = useState(null);
+  const [showFinalizeConfirm, setShowFinalizeConfirm] = useState(false);
 
   // Modified dashboardDetails to accept officeId parameter
-  const dashboardDetails = async (officeId) => {
+  const dashboardDetails = useCallback(async (officeId) => {
     try {
-      const token = await getToken();
-      if (!token) return null;
-      let apiUrl = `${url}/api/attendances/getTodayAttendance/${officeId}`;
-        
-      const response = await axios.get(apiUrl, {
-        headers: {
-          authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        }
-      });
+      const response = await api.get(`/api/attendances/getTodayAttendance/${officeId}`);
       const resData = response.data;
       setData(resData);
       if (resData?.offices) {
@@ -55,20 +45,13 @@ function Dashboard() {
       console.error('Error fetching dashboard details:', error);
       return null;
     }
-  }
+  }, [setOfficeData, showToast]);
 
   const handleFinalizeAttendance = async () => {
     try {
       setLoading(true);
-      const token = await getToken();
-      if (!token) return;
-      let apiUrl = `${url}/api/attendances/finalizeAttendance/${currentOffice}`;
-
-      const response = await axios.post(apiUrl, {}, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
-      });
+      setShowFinalizeConfirm(false);
+      const response = await api.post(`/api/attendances/finalizeAttendance/${currentOffice}`, {});
       showToast(response.data?.message || "Attendance finalized", "Success");
       await dashboardDetails(currentOffice); // refresh stats after finalization
       await checkAttendanceFinalization(currentOffice); // update finalization status
@@ -80,28 +63,20 @@ function Dashboard() {
     }
   }
 
-  const checkAttendanceFinalization = async (officeId) => {
+  const checkAttendanceFinalization = useCallback(async (officeId) => {
     if (!officeId || officeId === 'all') {
       setAutoFinalizeDisplay(null);
       return;
     }
     try {
-      const token = await getToken();
-      if (!token) return;
-      let apiUrl = `${url}/api/attendances/checkBulkAttendanceStatus/${officeId}`;
-
-      const response = await axios.get(apiUrl, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
-      });
+      const response = await api.get(`/api/attendances/checkBulkAttendanceStatus/${officeId}`);
       setIsAttendanceFinalized(!!response.data?.isBulkMarkingCompleted);
       setIsEmployeesAvailable((response.data?.totalEmployees || 0) > 0);
       setAutoFinalizeDisplay(response.data?.autoFinalizeDisplay || null);
     } catch (error) {
       console.error('Error checking attendance finalization:', error);
     }
-  }
+  }, []);
 
   // Modified office selection handler
   const handleOfficeSelect = (officeId) => {
@@ -122,7 +97,7 @@ function Dashboard() {
       if (currentOffice !== 'all') {
         checkAttendanceFinalization(currentOffice);
       }
-    }, [currentOffice])
+    }, [currentOffice, dashboardDetails, checkAttendanceFinalization])
   );
 
   const onRefresh = useCallback(async () => {
@@ -135,7 +110,7 @@ function Dashboard() {
     } finally {
       setRefreshing(false);
     }
-  }, [currentOffice]);
+  }, [currentOffice, dashboardDetails, checkAttendanceFinalization]);
   
   const stats = [
     { icon: 'user', iconSet: 'AntDesign', color: '#4A9EFF', label: 'Total Employees',field:"totalEmployees" },
@@ -160,6 +135,7 @@ function Dashboard() {
   const handleLogout = async () => {
     setOfficeData([]);
     setData(null);
+    setEmployeeData({});
     await removeToken();
     router.replace('/');
   };
@@ -279,7 +255,7 @@ function Dashboard() {
             <TouchableOpacity 
               onPress={()=>{
                 if(!isAttendanceFinalized){
-                  handleFinalizeAttendance()
+                  setShowFinalizeConfirm(true)
                 }else if (!isEmployeesAvailable && isAttendanceFinalized) {
                   showToast("No Employees Available","Warning")
                 }
@@ -425,6 +401,47 @@ function Dashboard() {
         </View>
 
         </ScrollView>
+
+        {/* Bulk Finalize Confirmation (hard-to-reverse action) */}
+        <Modal
+          visible={showFinalizeConfirm}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowFinalizeConfirm(false)}
+        >
+          <View style={styles.confirmOverlay}>
+            <View style={styles.confirmCard}>
+              <View style={styles.confirmIconCircle}>
+                <MaterialIcons name="notification-important" size={26} color="#FFB800" />
+              </View>
+              <Text style={styles.confirmTitle}>Finalize Attendance?</Text>
+              <Text style={styles.confirmMessage}>
+                This marks all employees who haven&apos;t checked in today as ABSENT and locks
+                today&apos;s attendance for this office. This action cannot be undone.
+              </Text>
+              <View style={styles.confirmButtonRow}>
+                <TouchableOpacity
+                  style={styles.confirmCancelButton}
+                  onPress={() => setShowFinalizeConfirm(false)}
+                  disabled={loading}
+                >
+                  <Text style={styles.confirmCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmProceedButton, loading && { opacity: 0.6 }]}
+                  onPress={handleFinalizeAttendance}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.confirmProceedText}>Finalize</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
     </SafeAreaView>
   )
 }
@@ -432,6 +449,81 @@ function Dashboard() {
 export default Dashboard
 
 const styles = StyleSheet.create({
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 28,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#192633',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2A3441',
+    padding: 22,
+    alignItems: 'center',
+  },
+  confirmIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 184, 0, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 184, 0, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  confirmMessage: {
+    fontSize: 13.5,
+    color: '#8A9BAE',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 22,
+  },
+  confirmButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  confirmCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#111a22',
+    borderWidth: 1,
+    borderColor: '#2A3441',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancelText: {
+    color: '#8A9BAE',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  confirmProceedButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#4A9EFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmProceedText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   container: {
     flex: 1,
     backgroundColor: '#0F1419',

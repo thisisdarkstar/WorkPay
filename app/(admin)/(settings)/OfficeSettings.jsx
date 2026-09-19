@@ -1,16 +1,14 @@
 import AntDesign from '@expo/vector-icons/AntDesign';
 import Entypo from '@expo/vector-icons/Entypo';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import axios from 'axios';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { url } from '../../../constants/EnvValue';
 import { useContextData } from "../../../context/EmployeeContext";
 import { useOfficeContextData } from "../../../context/OfficeContext";
-import { getApiErrorMessage, getToken } from '../../../services/ApiService';
+import { api, getApiErrorMessage } from '../../../services/ApiService';
 
 function OfficeSettings() {
   const [formData, setFormData] = useState({
@@ -36,13 +34,9 @@ function OfficeSettings() {
   const {showToast} = useContextData();
   const {setOfficeData} = useOfficeContextData();
 
-  const fetchOfficeDetails = async () => {
+  const fetchOfficeDetails = useCallback(async () => {
     try {
-      const response = await axios.get(`${url}/api/offices/`, {
-        headers: {
-          authorization: `Bearer ${await getToken()}`
-        }
-      });
+      const response = await api.get('/api/offices/');
 
       // Populate form data with fetched data
       const data = response.data;
@@ -60,7 +54,7 @@ function OfficeSettings() {
       showToast(getApiErrorMessage(error, "Error fetching office details"), "Error");
       console.error('Error fetching office details:', error);
     }
-  }
+  }, [setOfficeData, showToast]);
 
   const setUpdateEmployeeData = (data) => {
     setFormData({
@@ -141,7 +135,7 @@ const addOffice = async () => {
 
    
 
-      const response = await axios.post(`${url}/api/offices/create`, {
+      const response = await api.post('/api/offices/create', {
         checkin: checkinUTC,
         checkout: checkoutUTC,
         breakTime: formData.breakTime,
@@ -150,10 +144,6 @@ const addOffice = async () => {
         name: formData.name,
         range:formData.range,
         autoFinalizeTime: autoFinalizeUTC || null
-      }, {
-        headers: {
-          authorization: `Bearer ${await getToken()}`
-        }
       });
       if(response.data.message){
         showToast('Office added successfully!', 'Success');
@@ -220,7 +210,7 @@ const updateOfficeSettings = async () => {
       }
 
 
-    const response = await axios.put(`${url}/api/offices/update/${formData.id}`, {
+    const response = await api.put(`/api/offices/update/${formData.id}`, {
       checkin: checkinUTC,
       checkout: checkoutUTC,
       breakTime: formData.breakTime,
@@ -229,10 +219,6 @@ const updateOfficeSettings = async () => {
       name: formData.name,
       range:formData.range,
       autoFinalizeTime: autoFinalizeUTC || null
-    }, {
-      headers: {
-        authorization: `Bearer ${await getToken()}`
-      }
     });
 
     if(response.data.message){
@@ -251,11 +237,7 @@ const updateOfficeSettings = async () => {
 
 const deleteOffice = async (officeId) => {
   try {
-    const response = await axios.delete(`${url}/api/offices/delete/${officeId}`, {
-      headers: {
-        authorization: `Bearer ${await getToken()}`
-      }
-    });
+    const response = await api.delete(`/api/offices/delete/${officeId}`);
     if(response.data.message){
       showToast('Office deleted successfully!', 'Success');
       fetchOfficeDetails();
@@ -306,7 +288,7 @@ const deleteOffice = async (officeId) => {
   useFocusEffect(
     useCallback(() => {
       fetchOfficeDetails();
-    }, [])
+    }, [fetchOfficeDetails])
   );
 
   const onRefresh = useCallback(async () => {
@@ -316,7 +298,7 @@ const deleteOffice = async (officeId) => {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [fetchOfficeDetails]);
 
   const handleTimeChange = (event, selectedTime, type) => {
     if (event.type === 'dismissed') {

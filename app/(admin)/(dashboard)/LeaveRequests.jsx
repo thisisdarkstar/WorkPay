@@ -1,12 +1,10 @@
 import AntDesign from '@expo/vector-icons/AntDesign';
-import axios from 'axios';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { url } from '../../../constants/EnvValue';
 import { useContextData } from '../../../context/EmployeeContext';
-import { getApiErrorMessage, getToken } from '../../../services/ApiService';
+import { api, getApiErrorMessage } from '../../../services/ApiService';
 import { formatDay } from "../../../utils/TimeUtils";
 
 
@@ -19,37 +17,24 @@ function LeaveRequests() {
   const {showToast} = useContextData();
   const {id} = useLocalSearchParams();
 
-  const fetchLeaveRequest = async () => {
+  const fetchLeaveRequest = useCallback(async () => {
     try {
-      const token = await getToken();
-      if (!token) return;
-      let apiUrl = id ? `${url}/api/leaves/summary/${id}` : `${url}/api/leaves/summary`;
-      const response = await axios.get(apiUrl, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
-      });
+      const apiUrl = id ? `/api/leaves/summary/${id}` : '/api/leaves/summary';
+      const response = await api.get(apiUrl);
       setData(response.data);
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Error fetching leave requests'), 'Error');
       console.error("Error fetching leaves request", error);
     }
-  }
+  }, [id, showToast]);
 
   const handleAcceptReject = async (leaveId, type) => {
     if (processingLeaveId) return;
     try {
       setProcessingLeaveId(leaveId);
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.post(`${url}/api/leaves/update-status`,
-        {
-          leaveId,
-          status: type
-        }, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
+      const response = await api.post('/api/leaves/update-status', {
+        leaveId,
+        status: type
       });
       const resData = response.data;
       if (resData?.message) {
@@ -68,7 +53,7 @@ function LeaveRequests() {
   useFocusEffect(
     useCallback(() => {
       fetchLeaveRequest();
-    }, [id])
+    }, [fetchLeaveRequest])
   );
 
   const onRefresh = useCallback(async () => {
@@ -78,7 +63,7 @@ function LeaveRequests() {
     } finally {
       setRefreshing(false);
     }
-  }, [id]);
+  }, [fetchLeaveRequest]);
 
 
 

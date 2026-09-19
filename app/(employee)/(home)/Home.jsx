@@ -1,15 +1,13 @@
 import Feather from '@expo/vector-icons/Feather'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
-import axios from 'axios'
 import * as Location from 'expo-location'
 import { useFocusEffect, useRouter } from "expo-router"
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Modal, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native"
+import { useCallback, useEffect, useState } from "react"
+import { Modal, RefreshControl, ScrollView, StatusBar, Text, TouchableOpacity, View } from "react-native"
 import Animated, {
   Easing,
   FadeIn,
   FadeInDown,
-  FadeOut,
   FadeOutUp,
   ZoomIn,
   cancelAnimation,
@@ -22,11 +20,11 @@ import Animated, {
 } from 'react-native-reanimated'
 import * as Haptics from 'expo-haptics'
 import { SafeAreaView } from "react-native-safe-area-context"
-import { url } from '../../../constants/EnvValue'
 import { useContextData } from "../../../context/EmployeeContext"
-import { getApiErrorMessage, getToken, removeToken } from '../../../services/ApiService'
+import { api, getApiErrorMessage, getToken, removeToken } from '../../../services/ApiService'
 import { calculateHoursManual, formatMinutesToHHMM } from "../../../utils/TimeUtils"
 import { preloadInterstitialAd, showInterstitialAd } from '../../../services/AdService'
+import { styles } from '../../../styles/HomeStyles'
 
 // Haversine formula to calculate distance between two coordinates
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -49,7 +47,6 @@ function Home() {
   const [dateTime, setDateTime] = useState(new Date());
   const [showMenu, setShowMenu] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const router = useRouter();
   const [dashboardDetails, setDashboardDetails] = useState(null);
@@ -61,7 +58,6 @@ function Home() {
   const buttonScale = useSharedValue(1);
   const pulseScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(0.6);
-  const successScale = useSharedValue(0);
 
   const empDetails = dashboardDetails?.employeeDetails;
   const hasCheckin = !!empDetails?.checkinTime;
@@ -125,7 +121,7 @@ function Home() {
         pulseOpacity.value = withTiming(0, { duration: 250 });
       }
     }
-  }, [locationLoading, dashboardDetails, isDayClosed]);
+  }, [locationLoading, dashboardDetails, isDayClosed, pulseOpacity, pulseScale, spinRotation]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -155,8 +151,6 @@ function Home() {
         accuracy: location.coords.accuracy
       };
 
-      setCurrentLocation(userLocation);
-      
       return userLocation;
     } catch (error) {
       console.error('Error getting location:', error);
@@ -167,15 +161,9 @@ function Home() {
     }
   };
 
-  const fetchDashboardDetails = async () => {
+  const fetchDashboardDetails = useCallback(async () => {
     try {
-      const token = await getToken();
-      if (!token) return;
-      const response = await axios.get(`${url}/api/employees/dashboard`, {
-        headers: {
-          authorization: `Bearer ${token}`
-        }
-      });
+      const response = await api.get('/api/employees/dashboard');
       const data = response.data;
       setDashboardDetails(data);
       if (data?.employeeDetails) {
@@ -186,12 +174,12 @@ function Home() {
       showToast(getApiErrorMessage(error, 'Failed to fetch dashboard details'), 'Error');
       console.error('Error fetching dashboard details:', error);
     }
-  }
+  }, [setEmployeeData, showToast]);
 
   useFocusEffect(
     useCallback(() => {
       fetchDashboardDetails();
-    }, [])
+    }, [fetchDashboardDetails])
   );
 
   const onRefresh = useCallback(async () => {
@@ -201,7 +189,7 @@ function Home() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [fetchDashboardDetails]);
 
   useEffect(() => {
     preloadInterstitialAd();
@@ -245,8 +233,16 @@ function Home() {
       console.log(`Distance from office: ${distance.toFixed(2)} meters`);
 
       // Check if user is within allowed range
-      const MAX_DISTANCE = officeLocation?.range; // meters
+      const MAX_DISTANCE = Number(officeLocation?.range); // meters
       const MIN_DISTANCE = 0;   // meters
+
+      // Guard against an unconfigured/invalid geofence radius. Without this,
+      // `distance > undefined` evaluates to false and the check-in would proceed
+      // regardless of location, bypassing the geofence entirely.
+      if (!Number.isFinite(MAX_DISTANCE) || MAX_DISTANCE <= 0) {
+        showToast('Office geofence is not configured. Please contact your administrator.', 'Error');
+        return;
+      }
 
       if (distance < MIN_DISTANCE || distance > MAX_DISTANCE) {
         showToast(`You must be within ${MAX_DISTANCE} meters of the office to check in. Current distance: ${Math.round(distance)} meters`, 'Warning');
@@ -260,13 +256,9 @@ function Home() {
       }
 
       // Proceed with attendance action if location is verified
-      const response = await axios.post(`${url}/api/attendances/mark`, {
+      const response = await api.post('/api/attendances/mark', {
         type: action,
         location: userLocation // Send current location to backend
-      },{
-        headers: {
-          authorization: `Bearer ${token}`
-        }
       });
       
       const data = response.data;
@@ -317,6 +309,10 @@ function Home() {
   };
 
   const handleLogout = async () => {
+    // Clear cached user data so a subsequent user on this device can never
+    // briefly see the previous user's PII held in context memory.
+    setEmployeeData({});
+    setDashboardDetails(null);
     await removeToken();
     router.replace('/');
   }
@@ -340,6 +336,8 @@ function Home() {
         <View style={styles.menuContainer}>
           <TouchableOpacity 
             style={styles.menuButton}
+            accessibilityRole="button"
+            accessibilityLabel="Open menu"
             onPress={() => {
               try {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -693,439 +691,3 @@ function Home() {
 }
 
 export default Home
-
-const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#111a22',
-  },
-  headerContainer: {
-    width: '100%',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    zIndex: 100,
-    elevation: 20,
-  },
-  headerTitleContainer: {
-    gap: 8,
-    maxWidth:"80%",
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-  },
-  employeeIdBadge: {
-    backgroundColor: 'rgba(79, 70, 229, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(79, 70, 229, 0.3)',
-    alignSelf: 'flex-start',
-  },
-  employeeIdText: {
-    fontSize: 12,
-    color: '#A5B4FC',
-    fontWeight: '600',
-  },
-  logoutButton: {
-    width: 44,
-    height: 44,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  menuContainer: {
-    position: 'relative',
-    alignSelf:"flex-start",
-    zIndex: 100,
-    elevation: 20,
-  },
-  menuButton: {
-    width: 44,
-    height: 44,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  popupMenu: {
-    position: 'absolute',
-    top: 50,
-    right: 0,
-    backgroundColor: '#1F2937',
-    borderRadius: 12,
-    paddingVertical: 8,
-    minWidth: 140,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 30,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    zIndex: 1000,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  menuItemText: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  menuDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 8,
-  },
-  scrollContent: {
-    paddingBottom: 40,
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  checkInOutContainer: {
-    width: '100%',
-    backgroundColor: '#192633',
-    borderRadius: 24,
-    padding: 32,
-    marginTop: 20,
-    alignItems: 'center',
-    gap: 32,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  timeDateContainer: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  timeText: {
-    color: '#FFFFFF',
-    fontSize: 48,
-    fontWeight: '300',
-    letterSpacing: -2,
-  },
-  dateText: {
-    color: '#94A3B8',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  checkButton: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#4F46E5',
-    shadowColor: "#4F46E5",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 12,
-    borderWidth: 4,
-    borderColor: 'rgba(79, 70, 229, 0.3)',
-  },
-  buttonWrapper: {
-    width: 160,
-    height: 160,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pulseRing: {
-    position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(79, 70, 229, 0.35)',
-  },
-  pulseRingRed: {
-    backgroundColor: 'rgba(239, 68, 68, 0.35)',
-  },
-  loadingButton: {
-    opacity: 0.85,
-  },
-  checkOutButton: {
-    backgroundColor: '#EF4444',
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    shadowColor: "#EF4444",
-  },
-  completedButton: {
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderColor: 'rgba(16, 185, 129, 0.5)',
-    shadowColor: "#10B981",
-    elevation: 0,
-    shadowOpacity: 0,
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  checkButtonInner: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  checkButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  checkButtonSubtext: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  summaryHeader: {
-    width: '100%',
-    marginTop: 32,
-    marginBottom: 16,
-  },
-  summaryTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '600',
-    letterSpacing: -0.3,
-  },
-  detailsCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    backgroundColor: '#192633',
-    borderRadius: 20,
-    paddingVertical: 24,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  individualDetails: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 12,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#DCFCE7',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  detailTime: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  detailLabel: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  divider: {
-    width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 8,
-  },
-  statsCard: {
-    flexDirection: 'row',
-    width: '100%',
-    backgroundColor: '#192633',
-    borderRadius: 20,
-    paddingVertical: 20,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 6,
-  },
-  statValue: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  statLabel: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 16,
-  },
-  menuBackdrop: {
-    position: 'absolute',
-    top: -100,
-    bottom: -1500,
-    left: -1000,
-    right: -100,
-    zIndex: 999,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  modalBackdropTouchable: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  modalContent: {
-    width: '100%',
-    maxWidth: 380,
-    backgroundColor: '#1E293B',
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.45,
-    shadowRadius: 24,
-    elevation: 20,
-  },
-  modalIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.25)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#F8FAFC',
-    marginBottom: 8,
-    textAlign: 'center',
-    letterSpacing: -0.3,
-  },
-  modalMessage: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#94A3B8',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  modalShiftCard: {
-    width: '100%',
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    marginBottom: 16,
-  },
-  modalWarningBox: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.25)',
-    marginBottom: 20,
-  },
-  modalWarningIcon: {
-    marginTop: 2,
-  },
-  modalWarningText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 17,
-    color: '#FCD34D',
-    fontWeight: '500',
-  },
-  modalShiftRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-  },
-  modalShiftCol: {
-    alignItems: 'center',
-    gap: 4,
-    flex: 1,
-  },
-  modalShiftLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  modalShiftValue: {
-    fontSize: 17,
-    color: '#F1F5F9',
-    fontWeight: '700',
-  },
-  modalShiftDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  modalButtonsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  modalCancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  modalCancelText: {
-    color: '#E2E8F0',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  modalConfirmButton: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: '#EF4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  modalConfirmText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-})
