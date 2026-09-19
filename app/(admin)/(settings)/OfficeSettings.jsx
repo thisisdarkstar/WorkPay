@@ -30,6 +30,10 @@ function OfficeSettings() {
   const [modalVisible, setModalVisible] = useState(false);
   const [officeList, setOfficeList] = useState([]);
   const [actionType, setActionType] = useState('add'); 
+  // Office delete confirmation (M-08): prevents accidental single-tap deletion.
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [officeToDelete, setOfficeToDelete] = useState(null);
+  const [isDeletingOffice, setIsDeletingOffice] = useState(false);
   const router = useRouter();
   const {showToast} = useContextData();
   const {setOfficeData} = useOfficeContextData();
@@ -235,17 +239,28 @@ const updateOfficeSettings = async () => {
   }
 };
 
+// Opens the confirmation modal for the chosen office (M-08).
+const promptDeleteOffice = (office) => {
+  setOfficeToDelete(office);
+  setDeleteConfirmVisible(true);
+};
+
 const deleteOffice = async (officeId) => {
   try {
+    setIsDeletingOffice(true);
     const response = await api.delete(`/api/offices/delete/${officeId}`);
     if(response.data.message){
       showToast('Office deleted successfully!', 'Success');
       fetchOfficeDetails();
     }
+    setDeleteConfirmVisible(false);
+    setOfficeToDelete(null);
   } catch (error) {
     console.error('Error deleting office:', error);
     showToast(getApiErrorMessage(error, 'Failed to delete office'), 'Error');
-  } 
+  } finally {
+    setIsDeletingOffice(false);
+  }
 };
 
 
@@ -449,7 +464,7 @@ const deleteOffice = async (officeId) => {
               <View style={{ alignItems: 'flex-end', marginTop: 10 ,flexDirection:'row',justifyContent:'flex-end',gap:10,width:'100%'}}>
 
                 <TouchableOpacity 
-                  onPress={() => deleteOffice(office.id)}
+                  onPress={() => promptDeleteOffice(office)}
                 style={{ paddingHorizontal: 15, 
                 paddingVertical: 8, borderRadius: 8, 
                   justifyContent:'center',
@@ -482,6 +497,46 @@ const deleteOffice = async (officeId) => {
           ))
         )}
       </View>
+
+      {/* Office delete confirmation modal (M-08) */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={deleteConfirmVisible}
+        onRequestClose={() => !isDeletingOffice && setDeleteConfirmVisible(false)}
+      >
+        <View style={deleteStyles.overlay}>
+          <View style={deleteStyles.card}>
+            <View style={deleteStyles.iconCircle}>
+              <AntDesign name="delete" size={26} color="#EF4444" />
+            </View>
+            <Text style={deleteStyles.title}>Delete Office?</Text>
+            <Text style={deleteStyles.message}>
+              Are you sure you want to delete{' '}
+              <Text style={deleteStyles.highlight}>{officeToDelete?.name || 'this office'}</Text>?
+              {' '}This cannot be undone.
+            </Text>
+            <View style={deleteStyles.buttonRow}>
+              <TouchableOpacity
+                style={deleteStyles.cancelButton}
+                onPress={() => setDeleteConfirmVisible(false)}
+                disabled={isDeletingOffice}
+              >
+                <Text style={deleteStyles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[deleteStyles.confirmButton, isDeletingOffice && { opacity: 0.6 }]}
+                onPress={() => officeToDelete && deleteOffice(officeToDelete.id)}
+                disabled={isDeletingOffice}
+              >
+                <Text style={deleteStyles.confirmText}>
+                  {isDeletingOffice ? 'Deleting…' : 'Delete'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Modal for office location and timings */}
 
@@ -777,6 +832,92 @@ const deleteOffice = async (officeId) => {
 }
 
 export default OfficeSettings
+
+// Confirmation modal styles for office deletion (M-08).
+const deleteStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#192633',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2A3441',
+    paddingTop: 24,
+    paddingBottom: 20,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    elevation: 10,
+  },
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: 13.5,
+    color: '#8A9BAE',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 22,
+  },
+  highlight: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#111a22',
+    borderWidth: 1,
+    borderColor: '#2A3441',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelText: {
+    color: '#8A9BAE',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
