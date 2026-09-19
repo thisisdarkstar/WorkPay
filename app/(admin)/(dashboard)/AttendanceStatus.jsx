@@ -49,6 +49,8 @@ function AttendanceStatus() {
         return '#FF6B6B';
       case 'LATE':
         return '#FFB800';
+      case 'LEAVE':
+        return '#A78BFA';
       default:
         return '#8A9BAE';
     }
@@ -62,6 +64,8 @@ function AttendanceStatus() {
         return '#FF6B6B20';
       case 'LATE':
         return '#FFB80020';
+      case 'LEAVE':
+        return '#A78BFA20';
       default:
         return '#8A9BAE20';
     }

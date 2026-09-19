@@ -117,6 +117,7 @@ function Dashboard() {
     { icon: 'user-check', iconSet: 'Feather', color: '#00D4AA', label: 'Present Today',field:"totalPresent" ,status:"PRESENT"},
     { icon: 'user-x', iconSet: 'Feather', color: '#FF6B6B', label: 'Absent Today',field:"totalAbsent",status:"ABSENT" },
     { icon: 'timer-outline', iconSet: 'Ionicons', color: '#FFB800', label: 'Late Arrivals',field:"totalLate",status:"LATE" },
+    { icon: 'calendar-outline', iconSet: 'Ionicons', color: '#A78BFA', label: 'On Leave Today',field:"totalLeave",status:"LEAVE" },
   ];
 
   const renderIcon = (iconName, iconSet, color, size = 28) => {
