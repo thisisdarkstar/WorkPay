@@ -1,0 +1,76 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath('com.android.tools.build:gradle')
+    classpath('com.facebook.react:react-native-gradle-plugin')
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+  }
+}
+
+ext {
+  ndkVersion = "27.1.12297006"
+}
+
+def reactNativeAndroidDir = new File(
+  providers.exec {
+    workingDir(rootDir)
+    commandLine("node", "--print", "require.resolve('react-native/package.json')")
+  }.standardOutput.asText.get().trim(),
+  "../android"
+)
+
+allprojects {
+  repositories {
+    maven {
+      // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+      url(reactNativeAndroidDir)
+    }
+
+    google()
+    mavenCentral()
+    maven { url 'https://www.jitpack.io' }
+  }
+}
+
+apply plugin: "expo-root-project"
+apply plugin: "com.facebook.react.rootproject"
+
+subprojects { project ->
+  tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+      freeCompilerArgs += ["-Xskip-metadata-version-check"]
+    }
+  }
+
+  project.plugins.withId("com.android.library") {
+    project.android {
+      ndkVersion "27.1.12297006"
+      defaultConfig {
+        externalNativeBuild {
+          cmake {
+            arguments "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                      "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
+          }
+        }
+      }
+    }
+  }
+  project.plugins.withId("com.android.application") {
+    project.android {
+      ndkVersion "27.1.12297006"
+      defaultConfig {
+        externalNativeBuild {
+          cmake {
+            arguments "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                      "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
+          }
+        }
+      }
+    }
+  }
+}

@@ -10,9 +10,14 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native Prebuild directories (Expo managed workflow)
-/android
+# Native Prebuild directories — iOS is regenerated; android/ SOURCE is committed
+# (we build directly from it and it holds manual native fixes). Build outputs,
+# keystores, and signing secrets are excluded below.
 /ios
+
+# Signing secrets — NEVER commit (android/gradle.properties holds upload key passwords)
+android/gradle.properties
+android/app/debug.keystore
 
 # Android build outputs & local configuration
 .gradle/
