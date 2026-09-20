@@ -1,5 +1,6 @@
 import AntDesign from '@expo/vector-icons/AntDesign';
 import Entypo from '@expo/vector-icons/Entypo';
+import Feather from '@expo/vector-icons/Feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -34,6 +35,7 @@ function OfficeSettings() {
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [officeToDelete, setOfficeToDelete] = useState(null);
   const [isDeletingOffice, setIsDeletingOffice] = useState(false);
+  const [officeSearch, setOfficeSearch] = useState('');
   const router = useRouter();
   const {showToast} = useContextData();
   const {setOfficeData} = useOfficeContextData();
@@ -434,10 +436,35 @@ const deleteOffice = async (officeId) => {
 
       {/* list of offices */}
       <View style={{ padding: 10, gap: 10 }}>
+        {officeList.length > 0 && (
+          <View style={officeSearchStyles.wrapper}>
+            <Feather name="search" size={18} color="#8f9eb3" style={{ marginRight: 8 }} />
+            <TextInput
+              placeholder="Search offices by name..."
+              placeholderTextColor="#8f9eb3"
+              style={officeSearchStyles.input}
+              value={officeSearch}
+              onChangeText={setOfficeSearch}
+            />
+            {officeSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setOfficeSearch('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Feather name="x" size={18} color="#8f9eb3" />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
         {officeList.length === 0 ? (
           <Text style={{ color: '#8f9eb3', fontStyle: 'italic' }}>No offices added yet.</Text>
         ) : (
-          officeList.map((office, index) => (
+          (() => {
+            const q = officeSearch.trim().toLowerCase();
+            const shownOffices = q
+              ? officeList.filter(o => (o?.name || '').toLowerCase().includes(q))
+              : officeList;
+            if (shownOffices.length === 0) {
+              return <Text style={{ color: '#8f9eb3', fontStyle: 'italic' }}>{`No offices match "${officeSearch.trim()}"`}</Text>;
+            }
+            return shownOffices.map((office, index) => (
             <View 
               key={index}
               style={{ 
@@ -494,7 +521,8 @@ const deleteOffice = async (officeId) => {
                 </TouchableOpacity>
               </View>
             </View>
-          ))
+          ));
+          })()
         )}
       </View>
 
@@ -832,6 +860,33 @@ const deleteOffice = async (officeId) => {
 }
 
 export default OfficeSettings
+
+// Search bar styles for the office list.
+const officeSearchStyles = StyleSheet.create({
+  wrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 8,
+    // Shadow to visually separate the search bar from the office cards below.
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  input: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 15,
+    padding: 0,
+  },
+});
 
 // Confirmation modal styles for office deletion (M-08).
 const deleteStyles = StyleSheet.create({

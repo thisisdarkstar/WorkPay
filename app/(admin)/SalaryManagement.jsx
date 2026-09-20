@@ -49,6 +49,7 @@ function AdminSalaryManagement() {
   const {showToast} = useContextData();
   const {officeData, refreshOffices} = useOfficeContextData();
   const [selectedOfficeFilter, setSelectedOfficeFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
 
 
    const fetchPaymentHistory = useCallback(async () => {
@@ -613,15 +614,43 @@ function AdminSalaryManagement() {
         </View>
       )}
 
+      {/* Sticky search bar (stays fixed above the scrolling list) */}
+      <View style={searchStyles.stickyContainer}>
+        <View style={searchStyles.wrapper}>
+          <Feather name="search" size={18} color="#8A9BAE" style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Search by name or phone..."
+            placeholderTextColor="#8A9BAE"
+            style={searchStyles.input}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Feather name="x" size={18} color="#8A9BAE" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       {/* Employee List */}
       <FlatList
+        style={{ flex: 1 }}
         data={
           Array.isArray(paymentData)
             ? paymentData.filter(item => {
-                if (!selectedOfficeFilter || selectedOfficeFilter === 'ALL' || selectedOfficeFilter === 'all') {
-                  return true;
+                // Office filter
+                if (selectedOfficeFilter && selectedOfficeFilter !== 'ALL' && selectedOfficeFilter !== 'all') {
+                  if (item.officeId !== Number(selectedOfficeFilter)) return false;
                 }
-                return item.officeId === Number(selectedOfficeFilter);
+                // Search filter (name or phone)
+                const q = searchQuery.trim().toLowerCase();
+                if (q) {
+                  const name = (item?.name || '').toLowerCase();
+                  const phone = (item?.phone || '').toString();
+                  if (!name.includes(q) && !phone.includes(q)) return false;
+                }
+                return true;
               })
             : []
         }
@@ -641,7 +670,9 @@ function AdminSalaryManagement() {
           <View style={{ padding: 40, alignItems: 'center' }}>
             <MaterialIcons name="payments" size={48} color="#486581" />
             <Text style={{ color: '#8A9BAE', fontSize: 16, marginTop: 12 }}>
-              No salary records found for {getSelectedMonthName()} {selectedYear}
+              {searchQuery.trim()
+                ? `No employees match "${searchQuery.trim()}"`
+                : `No salary records found for ${getSelectedMonthName()} ${selectedYear}`}
             </Text>
           </View>
         }
@@ -1026,6 +1057,41 @@ function AdminSalaryManagement() {
 }
 
 export default AdminSalaryManagement
+
+// Search bar styles (shared visual style used across list screens).
+const searchStyles = StyleSheet.create({
+  stickyContainer: {
+    backgroundColor: '#111a22',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A3441',
+    // Elevation/shadow so it reads as a layer floating above the scroll content.
+    zIndex: 10,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  wrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#192633',
+    borderWidth: 1,
+    borderColor: '#2A3441',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  input: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 15,
+    padding: 0,
+  },
+});
 
 // Local styles for the settle/revert confirmation modal and the paid-row layout.
 const confirmStyles = StyleSheet.create({

@@ -2,7 +2,7 @@ import AntDesign from '@expo/vector-icons/AntDesign';
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useContextData } from '../../../context/EmployeeContext';
 import { api, getApiErrorMessage } from '../../../services/ApiService';
@@ -12,6 +12,7 @@ function AttendanceStatus() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [employees, setEmployees] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const { id, status, officeName } = useLocalSearchParams();
   const { showToast } = useContextData();
 
@@ -71,6 +72,15 @@ function AttendanceStatus() {
     }
   };
 
+  // Filter employees by search query (name or phone).
+  const q = searchQuery.trim().toLowerCase();
+  const filteredEmployees = q
+    ? employees.filter(e =>
+        (e?.name || '').toLowerCase().includes(q) ||
+        (e?.phone || '').toString().includes(q)
+      )
+    : employees;
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -87,6 +97,25 @@ function AttendanceStatus() {
 
       <View style={{ backgroundColor: getStatusBackground(status), marginTop: 20, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 8, alignSelf: "center", justifyContent: "center", alignItems: "center" }}>
         <Text style={{ color: getStatusColor(status), fontWeight: "bold", fontSize: 14 }}>{status}</Text>
+      </View>
+
+      {/* Search bar (sticky above the scrolling list) */}
+      <View style={searchStyles.stickyContainer}>
+        <View style={searchStyles.wrapper}>
+          <Feather name="search" size={18} color="#8A9BAE" style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Search by name or phone..."
+            placeholderTextColor="#8A9BAE"
+            style={searchStyles.input}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Feather name="x" size={18} color="#8A9BAE" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Employees List */}
@@ -106,14 +135,16 @@ function AttendanceStatus() {
             <ActivityIndicator size="large" color="#4A9EFF" />
             <Text style={styles.loadingText}>Loading employees...</Text>
           </View>
-        ) : employees.length === 0 ? (
+        ) : filteredEmployees.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Feather name="users" size={64} color="#2A3441" />
-            <Text style={styles.emptyText}>No employees found</Text>
+            <Text style={styles.emptyText}>
+              {searchQuery.trim() ? `No employees match "${searchQuery.trim()}"` : "No employees found"}
+            </Text>
           </View>
         ) : (
           <View style={styles.employeesContainer}>
-            {employees?.map((employee, index) => (
+            {filteredEmployees?.map((employee, index) => (
               <View key={employee?.id || index} style={styles.employeeCard}>
                 {/* Employee Avatar/Icon */}
                 <View style={styles.avatarContainer}>
@@ -159,6 +190,39 @@ function AttendanceStatus() {
 }
 
 export default AttendanceStatus;
+
+const searchStyles = StyleSheet.create({
+  stickyContainer: {
+    backgroundColor: '#0F1419',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A3441',
+    zIndex: 10,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  wrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#192633',
+    borderWidth: 1,
+    borderColor: '#2A3441',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  input: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 15,
+    padding: 0,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {

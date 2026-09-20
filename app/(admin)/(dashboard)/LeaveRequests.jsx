@@ -1,7 +1,8 @@
 import AntDesign from '@expo/vector-icons/AntDesign';
+import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useContextData } from '../../../context/EmployeeContext';
 import { api, getApiErrorMessage } from '../../../services/ApiService';
@@ -12,6 +13,7 @@ function LeaveRequests() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('pendingLeaves');
   const [data,setData] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [processingLeaveId, setProcessingLeaveId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const {showToast} = useContextData();
@@ -126,6 +128,25 @@ function LeaveRequests() {
         ))}
       </View>
 
+      {/* Search bar (sticky above the scrolling list) */}
+      <View style={leaveSearchStyles.stickyContainer}>
+        <View style={leaveSearchStyles.wrapper}>
+          <Feather name="search" size={18} color="#8A9BAE" style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Search by employee name..."
+            placeholderTextColor="#8A9BAE"
+            style={leaveSearchStyles.input}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Feather name="x" size={18} color="#8A9BAE" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       {/* Content */}
       <ScrollView 
         style={styles.content}
@@ -139,7 +160,13 @@ function LeaveRequests() {
         }
       >
         <View style={styles.requestsContainer}>
-         {Array.isArray(data?.[activeTab]) && data[activeTab].length > 0 ? data[activeTab].map((request, index) => (
+         {(() => {
+           const list = Array.isArray(data?.[activeTab]) ? data[activeTab] : [];
+           const q = searchQuery.trim().toLowerCase();
+           const shown = q
+             ? list.filter(r => (r?.employee?.name || '').toLowerCase().includes(q))
+             : list;
+           return shown.length > 0 ? shown.map((request, index) => (
             <View key={request?.id || index} style={styles.requestItem}>
               <View style={styles.requestInfo}>
                 <Text style={styles.requestName}>{request?.employee?.name || "Employee"}</Text>
@@ -181,7 +208,16 @@ function LeaveRequests() {
                 )}
               </View>
             </View>
-          )) : <View style={{alignItems:'center',marginTop:50}}><Text style={{color:'#8A9BAE',fontSize:16}}>No {tabs.find(tab => tab.key === activeTab)?.label} found.</Text></View>}
+          )) : (
+            <View style={{alignItems:'center',marginTop:50}}>
+              <Text style={{color:'#8A9BAE',fontSize:16}}>
+                {q
+                  ? `No results match "${searchQuery.trim()}"`
+                  : `No ${tabs.find(tab => tab.key === activeTab)?.label} found.`}
+              </Text>
+            </View>
+          );
+         })()}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -189,6 +225,39 @@ function LeaveRequests() {
 }
 
 export default LeaveRequests
+
+const leaveSearchStyles = StyleSheet.create({
+  stickyContainer: {
+    backgroundColor: '#0F1419',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A3441',
+    zIndex: 10,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  wrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#192633',
+    borderWidth: 1,
+    borderColor: '#2A3441',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  input: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 15,
+    padding: 0,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
