@@ -5,7 +5,6 @@ import {
   getInterstitialAdUnitId,
   AD_REQUEST_OPTIONS,
 } from '../constants/AdsConfig';
-import { getRole } from './ApiService';
 
 // Session state tracking
 let hasShownAppOpenInSession = false;
@@ -18,36 +17,10 @@ let isInterstitialLoaded = false;
 /**
  * Loads and displays an App Open Ad on cold start or app launch.
  * Includes session throttling so users are not interrupted repeatedly.
- *
- * ROLE GATING: Admins should only ever see the banner ad — never the app-open
- * or interstitial ads. We skip the app-open ad entirely when the stored role is
- * 'admin'. (If no role is stored yet, we allow it — a not-yet-logged-in user is
- * treated as a regular/employee session.)
  */
 export const showAppOpenAdOnLaunch = (): void => {
   try {
     if (!isNativeAdMobAvailable()) return;
-    if (hasShownAppOpenInSession || isAppOpenLoading) return;
-
-    // Resolve role first; only proceed for non-admins.
-    getRole()
-      .then((role) => {
-        if (role === 'admin') return; // Admins never see app-open ads.
-        loadAndShowAppOpenAd();
-      })
-      .catch(() => {
-        // If role lookup fails, fail open to the ad (non-admin default).
-        loadAndShowAppOpenAd();
-      });
-  } catch (error) {
-    console.warn('[AdService] AppOpenAd exception:', error);
-    isAppOpenLoading = false;
-  }
-};
-
-/** Internal: performs the actual App Open Ad load + show. */
-const loadAndShowAppOpenAd = (): void => {
-  try {
     if (hasShownAppOpenInSession || isAppOpenLoading) return;
 
     const googleAds = getGoogleMobileAds();
@@ -164,12 +137,6 @@ export const preloadInterstitialAd = (): void => {
 export const showInterstitialAd = async (): Promise<boolean> => {
   try {
     if (!isNativeAdMobAvailable()) return false;
-
-    // ROLE GATING: admins never see interstitial ads. (Currently only the
-    // employee checkout flow calls this, but we guard here too so it can never
-    // show for an admin regardless of the caller.)
-    const role = await getRole();
-    if (role === 'admin') return false;
 
     if (isInterstitialLoaded && interstitialAdInstance) {
       await interstitialAdInstance.show();
