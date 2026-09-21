@@ -26,6 +26,7 @@
       "edgeToEdgeEnabled": true,
       "package": "com.chiranjeebnayak.workPayApp",
       "versionCode": 15,
+      "googleServicesFile": "./android/app/google-services.json",
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
@@ -41,6 +42,7 @@
     },
     "plugins": [
       "expo-router",
+      "@react-native-firebase/app",
       [
         "expo-splash-screen",
         {

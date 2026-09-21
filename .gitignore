@@ -19,6 +19,10 @@ expo-env.d.ts
 android/gradle.properties
 android/app/debug.keystore
 
+# Firebase config — contains Google API key; keep out of version control
+android/app/google-services.json
+ios/**/GoogleService-Info.plist
+
 # Android build outputs & local configuration
 .gradle/
 android/.gradle/

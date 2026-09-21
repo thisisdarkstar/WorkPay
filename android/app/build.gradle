@@ -191,3 +191,9 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// Google Services plugin must be applied at the BOTTOM of the app build.gradle
+// (Google's requirement). This wires google-services.json → generated Firebase
+// resources (google_app_id, project_id, etc.) which @react-native-firebase/app
+// reads at runtime.
+apply plugin: "com.google.gms.google-services"

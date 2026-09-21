@@ -6,7 +6,8 @@ import { ActivityIndicator, RefreshControl, ScrollView, StatusBar, StyleSheet, T
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useContextData } from "../../../context/EmployeeContext";
-import { api, getApiErrorMessage } from "../../../services/ApiService";
+import { api, getApiErrorMessage, removeToken, storeToken } from "../../../services/ApiService";
+import { CacheKeys, getSWR, invalidate, TTL } from "../../../services/CacheService";
 
 function Profile() {
   const router = useRouter();
@@ -34,13 +35,26 @@ function Profile() {
     }
   }, [employeeData]);
 
-  const fetchDashboardDetails = useCallback(async () => {
+  const fetchDashboardDetails = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
-      const response = await api.get('/api/employees/dashboard');
-      const data = response.data;
-      if (data?.employeeDetails) {
-        setEmployeeData(data.employeeDetails);
-      }
+      // Shares the 'employee:dashboard' cache key with Home. Bank update below
+      // invalidates it so the refreshed profile reflects the new details.
+      await getSWR(
+        CacheKeys.employeeDashboard(),
+        async () => {
+          const response = await api.get('/api/employees/dashboard');
+          return response.data;
+        },
+        {
+          ttl: TTL.FIVE_MIN,
+          forceRefresh,
+          onData: (data) => {
+            if (data?.employeeDetails) {
+              setEmployeeData(data.employeeDetails);
+            }
+          },
+        }
+      );
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Error fetching profile details'), 'Error');
       console.error('Error fetching dashboard details:', error);
@@ -50,7 +64,7 @@ function Profile() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchDashboardDetails();
+      await fetchDashboardDetails({ forceRefresh: true });
     } finally {
       setRefreshing(false);
     }
@@ -84,12 +98,32 @@ function Profile() {
         currentPassword: oldPassword,
         newPassword: newPassword
       });
-      if (response.data?.message) {
-        showToast(response.data.message, "Success");
-        setShowPasswordSection(false);
-        setOldPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
+
+      // Always clear the form once the backend accepted the change.
+      setShowPasswordSection(false);
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+
+      const successMsg = response.data?.message || "Password updated successfully";
+      // Some backends rotate the JWT on password change (rare but possible). If
+      // a fresh token comes back in the response, swap it in and keep the user
+      // signed in — no forced logout needed.
+      const rotatedToken = response.data?.token;
+
+      if (rotatedToken) {
+        await storeToken(rotatedToken, 'employee');
+        showToast(successMsg, "Success");
+      } else {
+        // Standard case: backend invalidates all existing JWTs for this user
+        // (correct security behaviour). If we let the app keep running, the
+        // next authenticated request would hit a 401 and surface a confusing
+        // "Session expired / No token provided" toast. Instead, log out cleanly
+        // right here and send the user to the login screen with a single,
+        // clear message.
+        showToast(`${successMsg}. Please sign in again.`, "Success");
+        await removeToken();
+        router.replace('/');
       }
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to update password"), "Error");
@@ -132,7 +166,10 @@ function Profile() {
       if (response.data?.message) {
         showToast("Bank details updated successfully", "Success");
         setShowBankEditSection(false);
-        fetchDashboardDetails();
+        // Profile data changed → invalidate the shared dashboard cache so both
+        // this screen and Home reload the updated bank details.
+        await invalidate(CacheKeys.employeeDashboard());
+        await fetchDashboardDetails({ forceRefresh: true });
       }
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to update bank details"), "Error");

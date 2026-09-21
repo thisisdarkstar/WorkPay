@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useContextData } from "../../../context/EmployeeContext";
 import { useOfficeContextData } from "../../../context/OfficeContext";
 import { api, getApiErrorMessage } from '../../../services/ApiService';
+import { CacheKeys, getSWR, invalidate, TTL } from '../../../services/CacheService';
 
 function OfficeSettings() {
   const [formData, setFormData] = useState({
@@ -40,22 +41,26 @@ function OfficeSettings() {
   const {showToast} = useContextData();
   const {setOfficeData} = useOfficeContextData();
 
-  const fetchOfficeDetails = useCallback(async () => {
+  const fetchOfficeDetails = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
-      const response = await api.get('/api/offices/');
-
-      // Populate form data with fetched data
-      const data = response.data;
-      // setFormData({
-      //   startTime: data.checkin ? new Date(data.checkin) : null,
-      //   endTime: data.checkout ? new Date(data.checkout) : null,
-      //   breakTime: data.breakTime || 0,
-      //   latitude: data.latitude || null,
-      //   longitude: data.longitude || null
-      // });
-      const offices = Array.isArray(data?.offices) ? data.offices : [];
-      setOfficeList(offices);
-      setOfficeData(offices);
+      // Shares the 'offices' cache key with OfficeContext (same endpoint).
+      // Mutations below invalidate it, so edits are never masked by the cache.
+      await getSWR(
+        CacheKeys.offices(),
+        async () => {
+          const response = await api.get('/api/offices/');
+          return Array.isArray(response.data?.offices) ? response.data.offices : [];
+        },
+        {
+          ttl: TTL.TWELVE_HOURS,
+          forceRefresh,
+          onData: (offices) => {
+            const list = Array.isArray(offices) ? offices : [];
+            setOfficeList(list);
+            setOfficeData(list);
+          },
+        }
+      );
     } catch (error) {
       showToast(getApiErrorMessage(error, "Error fetching office details"), "Error");
       console.error('Error fetching office details:', error);
@@ -155,7 +160,8 @@ const addOffice = async () => {
         showToast('Office added successfully!', 'Success');
         setModalVisible(false);
         resetFormData();
-        fetchOfficeDetails();
+        await invalidate(CacheKeys.offices());
+        await fetchOfficeDetails({ forceRefresh: true });
       }
   }catch (error) {
     console.error('Error adding office:', error);
@@ -231,7 +237,8 @@ const updateOfficeSettings = async () => {
       showToast('Office settings updated successfully!', 'Success');
       setModalVisible(false);
       resetFormData();
-      fetchOfficeDetails();
+      await invalidate(CacheKeys.offices());
+      await fetchOfficeDetails({ forceRefresh: true });
     }
   } catch (error) {
     console.error('Error updating office settings:', error);
@@ -253,7 +260,8 @@ const deleteOffice = async (officeId) => {
     const response = await api.delete(`/api/offices/delete/${officeId}`);
     if(response.data.message){
       showToast('Office deleted successfully!', 'Success');
-      fetchOfficeDetails();
+      await invalidate(CacheKeys.offices());
+      await fetchOfficeDetails({ forceRefresh: true });
     }
     setDeleteConfirmVisible(false);
     setOfficeToDelete(null);
@@ -311,7 +319,7 @@ const deleteOffice = async (officeId) => {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchOfficeDetails();
+      await fetchOfficeDetails({ forceRefresh: true });
     } finally {
       setRefreshing(false);
     }

@@ -21,6 +21,7 @@ import { useContextData } from "../../context/EmployeeContext"
 import { useOfficeContextData } from "../../context/OfficeContext"
 import { styles } from '../../styles/SalaryManagementStyles'
 import { api, getApiErrorMessage } from "../../services/ApiService"
+import { AnalyticsEvents, logEvent } from "../../services/AnalyticsService"
 
 function AdminSalaryManagement() {
   const router = useRouter()
@@ -181,6 +182,17 @@ function AdminSalaryManagement() {
       );
       const data = response.data;
       showToast(data.message || 'Salary settled successfully', "Success");
+      // F-5 (frontend companion): When the backend clamps a negative net
+      // payable to ₹0, it returns a `warning` object. Surface it as a
+      // separate Warning toast so the admin knows the payslip was capped
+      // and the raw shortfall was NOT recorded.
+      if (data?.warning?.message) {
+        setTimeout(() => showToast(data.warning.message, "Warning"), 300);
+      }
+      await logEvent(AnalyticsEvents.TRANSACTION_ADDED, {
+        type: 'SALARY',
+        amount: Number(finalAmount) || 0,
+      });
       setSalaryConfirmVisible(false);
       setSalaryConfirmEmployee(null);
       fetchPaymentHistory();
@@ -206,6 +218,7 @@ function AdminSalaryManagement() {
         year: selectedYear,
       });
       showToast(response.data?.message || 'Salary settlement reverted', "Success");
+      await logEvent(AnalyticsEvents.TRANSACTION_ADDED, { type: 'REVERT_SALARY' });
       setSalaryConfirmVisible(false);
       setSalaryConfirmEmployee(null);
       fetchPaymentHistory();
@@ -263,6 +276,10 @@ function AdminSalaryManagement() {
       const data = response.data;
       if (data.message) {
         showToast(data.message, "Success");
+        await logEvent(AnalyticsEvents.TRANSACTION_ADDED, {
+          type: 'ADVANCE',
+          amount: Number(advanceAmount) || 0,
+        });
         fetchPaymentHistory();
         setAdvanceAmount(null);
         setAdvanceModalVisible(false);
@@ -300,6 +317,10 @@ function AdminSalaryManagement() {
       const data = response.data;
       if (data.message) {
         showToast(data.message, "Success");
+        await logEvent(AnalyticsEvents.TRANSACTION_ADDED, {
+          type: 'BONUS',
+          amount: Number(bonusAmount) || 0,
+        });
         fetchPaymentHistory();
         setBonusAmount(null);
         setBonusDescription(null);

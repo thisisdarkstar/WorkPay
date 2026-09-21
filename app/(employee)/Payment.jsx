@@ -5,6 +5,7 @@ import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useContextData } from '../../context/EmployeeContext'
 import { api, getApiErrorMessage } from '../../services/ApiService'
+import { CacheKeys, getSWR, TTL } from '../../services/CacheService'
 import { styles } from '../../styles/PaymentStyles'
 
 
@@ -80,21 +81,34 @@ function Payment() {
     return salaryTx?.date || null;
   };
 
-  const fetchPaymentHistory = useCallback(async () => {
+  const fetchPaymentHistory = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
       setLoading(true);
-      const response = await api.get('/api/transactions/employee', {
-        params: { year: selectedYear },
-      });
-      const data = response.data;
-      setPaymentData(data);
+      // Past years are immutable → cache for a day. The current year can still
+      // change (admin adds transactions), so use a short TTL + SWR: the screen
+      // paints from cache instantly and revalidates in the background on focus.
+      const isPastYear = selectedYear < currentYear;
+      await getSWR(
+        CacheKeys.transactionsEmployee(selectedYear),
+        async () => {
+          const response = await api.get('/api/transactions/employee', {
+            params: { year: selectedYear },
+          });
+          return response.data;
+        },
+        {
+          ttl: isPastYear ? TTL.DAY : TTL.FIVE_MIN,
+          forceRefresh,
+          onData: (data) => setPaymentData(data),
+        }
+      );
     } catch (err) {
       showToast(getApiErrorMessage(err, 'Failed to fetch payment history'), 'Error');
       console.log(err);
     } finally {
       setLoading(false);
     }
-  }, [selectedYear, showToast]);
+  }, [selectedYear, currentYear, showToast]);
 
   useFocusEffect(
     useCallback(() => {
@@ -105,7 +119,7 @@ function Payment() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchPaymentHistory();
+      await fetchPaymentHistory({ forceRefresh: true });
     } finally {
       setRefreshing(false);
     }

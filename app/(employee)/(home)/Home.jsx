@@ -2,7 +2,7 @@ import Feather from '@expo/vector-icons/Feather'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import * as Location from 'expo-location'
 import { useFocusEffect, useRouter } from "expo-router"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Modal, RefreshControl, ScrollView, StatusBar, Text, TouchableOpacity, View } from "react-native"
 import Animated, {
   Easing,
@@ -22,6 +22,8 @@ import * as Haptics from 'expo-haptics'
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useContextData } from "../../../context/EmployeeContext"
 import { api, getApiErrorMessage, getToken, removeToken } from '../../../services/ApiService'
+import { CacheKeys, getSWR, invalidate, TTL } from '../../../services/CacheService'
+import { AnalyticsEvents, logEvent } from '../../../services/AnalyticsService'
 import { calculateHoursManual, formatMinutesToHHMM } from "../../../utils/TimeUtils"
 import { preloadInterstitialAd, showInterstitialAd } from '../../../services/AdService'
 import { styles } from '../../../styles/HomeStyles'
@@ -50,6 +52,15 @@ function Home() {
   const [showMenu, setShowMenu] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
+  // Tracks the in-flight attendance action ('checkin' | 'checkout' | null) for
+  // the full duration of the flow — location fetch, /attendances/mark call,
+  // cache invalidation, and dashboard refetch. Drives the spinner + disabled
+  // state so the button never appears idle while work is still happening.
+  const [submitting, setSubmitting] = useState(null);
+  // Synchronous re-entrancy guard: React state updates are async, so relying
+  // on `submitting` alone leaves a tiny window where two rapid taps can both
+  // pass the guard. The ref closes that window instantly.
+  const submittingRef = useRef(false);
   const router = useRouter();
   const [dashboardDetails, setDashboardDetails] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -71,14 +82,18 @@ function Home() {
 
   // Pulse and spinning loader animations
   useEffect(() => {
-    if (locationLoading) {
+    // "Busy" now spans the entire attendance flow (location fetch → API call
+    // → cache invalidation → dashboard refetch), not just the GPS phase, so
+    // the spinner never stops mid-flow.
+    const isBusy = locationLoading || submitting !== null;
+    if (isBusy) {
       spinRotation.value = 0;
       spinRotation.value = withRepeat(
         withTiming(360, { duration: 900, easing: Easing.linear }),
         -1,
         false
       );
-      // Fast radar pulse when loading location
+      // Fast radar pulse while working
       pulseScale.value = withRepeat(
         withSequence(
           withTiming(1.35, { duration: 600, easing: Easing.out(Easing.ease) }),
@@ -123,7 +138,7 @@ function Home() {
         pulseOpacity.value = withTiming(0, { duration: 250 });
       }
     }
-  }, [locationLoading, dashboardDetails, isDayClosed, pulseOpacity, pulseScale, spinRotation]);
+  }, [locationLoading, submitting, dashboardDetails, isDayClosed, pulseOpacity, pulseScale, spinRotation]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -163,15 +178,29 @@ function Home() {
     }
   };
 
-  const fetchDashboardDetails = useCallback(async () => {
+  const fetchDashboardDetails = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
-      const response = await api.get('/api/employees/dashboard');
-      const data = response.data;
-      setDashboardDetails(data);
-      if (data?.employeeDetails) {
-        setEmployeeData(data.employeeDetails);
-      }
-      console.log('Fetched dashboard details:', data);
+      // The dashboard payload carries live-ish attendance state, so we use a
+      // short TTL: cached data paints the screen instantly (no blank load),
+      // but a background revalidate always runs on focus to keep check-in
+      // state fresh. The 'mark' mutation invalidates this key immediately.
+      await getSWR(
+        CacheKeys.employeeDashboard(),
+        async () => {
+          const response = await api.get('/api/employees/dashboard');
+          return response.data;
+        },
+        {
+          ttl: TTL.FIVE_MIN,
+          forceRefresh,
+          onData: (data) => {
+            setDashboardDetails(data);
+            if (data?.employeeDetails) {
+              setEmployeeData(data.employeeDetails);
+            }
+          },
+        }
+      );
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Failed to fetch dashboard details'), 'Error');
       console.error('Error fetching dashboard details:', error);
@@ -187,7 +216,7 @@ function Home() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchDashboardDetails();
+      await fetchDashboardDetails({ forceRefresh: true });
     } finally {
       setRefreshing(false);
     }
@@ -198,20 +227,27 @@ function Home() {
   }, []);
 
   const handleAttendanceAction = async (action) => {
+    // Synchronous re-entrancy guard: if the previous invocation is still
+    // running, silently drop this tap. Uses a ref so it's effective in the
+    // same event-loop tick, before React has had a chance to flip `disabled`.
+    if (submittingRef.current) return;
+
     if (isDayClosed) {
       showToast('Attendance for today is closed.', 'Warning');
       return;
     }
 
-    if(locationLoading){
-      showToast('Location is being fetched. Please wait...','Warning');
+    if (locationLoading) {
+      showToast('Location is being fetched. Please wait...', 'Warning');
       return;
     }
 
+    submittingRef.current = true;
+    setSubmitting(action);
     try {
       // Get office location from dashboard details
       const officeLocation = dashboardDetails?.officeDetails;
-      
+
       if (!officeLocation || !officeLocation.latitude || !officeLocation.longitude) {
         showToast('Office location information is not available. Please contact your administrator.', 'Error');
         return;
@@ -262,11 +298,43 @@ function Home() {
         type: action,
         location: userLocation // Send current location to backend
       });
-      
+
       const data = response.data;
-      if(data){
+      if (data) {
         showToast(data.message || "Attendance marked successfully", "Success");
-        await fetchDashboardDetails();
+
+        // Optimistic UI update: patch the local dashboard so `hasCheckin` /
+        // `hasCheckout` flip instantly. The button re-renders as the next
+        // state (Check In → Check Out, or Check Out → Shift Done) without
+        // waiting for the follow-up dashboard refetch to return.
+        const optimisticTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setDashboardDetails((prev) => {
+          if (!prev) return prev;
+          const nextEmp = { ...(prev.employeeDetails || {}) };
+          if (action === 'checkin') {
+            nextEmp.checkinTime = nextEmp.checkinTime || optimisticTime;
+          } else {
+            nextEmp.checkoutTime = nextEmp.checkoutTime || optimisticTime;
+          }
+          return { ...prev, employeeDetails: nextEmp };
+        });
+
+        // Analytics is fire-and-forget — never let it slow the UI. The
+        // AnalyticsService already swallows its own errors.
+        logEvent(AnalyticsEvents.ATTENDANCE_MARK, { type: action });
+
+        // Marking changes both the dashboard state and this month's attendance
+        // history → invalidate both so any other screen refetches fresh.
+        await invalidate(CacheKeys.employeeDashboard());
+        {
+          const now = new Date();
+          await invalidate(CacheKeys.attendance(now.getFullYear(), now.getMonth() + 1));
+        }
+        // Sync with server-authoritative timestamps + overtime totals. Kept
+        // inside the same submitting window so the spinner runs continuously
+        // and no other tap can race a second /mark call before the state
+        // reflects the first one.
+        await fetchDashboardDetails({ forceRefresh: true });
 
         // If checkout completed, show compliant Interstitial Ad at natural transition point
         if (action === 'checkout') {
@@ -279,6 +347,11 @@ function Home() {
       const errMsg = getApiErrorMessage(error, 'Error marking attendance');
       showToast(errMsg, 'Error');
       console.error('Error marking attendance:', error);
+    } finally {
+      // Release the guard for BOTH success and failure paths, so a failed
+      // check-in can be retried without a page reload.
+      setSubmitting(null);
+      submittingRef.current = false;
     }
   }
 
@@ -466,15 +539,15 @@ function Home() {
                 onPress={() => handleAttendanceAction('checkin')}
                 onPressIn={handleButtonPressIn}
                 onPressOut={handleButtonPressOut}
-                disabled={locationLoading}
+                disabled={locationLoading || submitting !== null}
                 activeOpacity={1}
               >
                 <Animated.View style={[styles.buttonWrapper, buttonScaleStyle]}>
                   {/* Pulse ring */}
                   <Animated.View style={[styles.pulseRing, pulseRingStyle]} />
-                  <View style={[styles.checkButton, locationLoading && styles.loadingButton]}>
+                  <View style={[styles.checkButton, (locationLoading || submitting !== null) && styles.loadingButton]}>
                     <View style={styles.checkButtonInner}>
-                      {locationLoading ? (
+                      {(locationLoading || submitting !== null) ? (
                         <Animated.View style={spinStyle}>
                           <MaterialCommunityIcons name="loading" size={48} color="white" />
                         </Animated.View>
@@ -483,7 +556,11 @@ function Home() {
                       )}
                       <Text style={styles.checkButtonText}>Check In</Text>
                       <Text style={styles.checkButtonSubtext}>
-                        {locationLoading ? "Getting location..." : "Tap to clock in"}
+                        {locationLoading
+                          ? "Getting location..."
+                          : submitting === 'checkin'
+                            ? "Marking check-in..."
+                            : "Tap to clock in"}
                       </Text>
                     </View>
                   </View>
@@ -504,15 +581,15 @@ function Home() {
                 }}
                 onPressIn={handleButtonPressIn}
                 onPressOut={handleButtonPressOut}
-                disabled={locationLoading}
+                disabled={locationLoading || submitting !== null}
                 activeOpacity={1}
               >
                 <Animated.View style={[styles.buttonWrapper, buttonScaleStyle]}>
                   {/* Pulse ring */}
                   <Animated.View style={[styles.pulseRing, styles.pulseRingRed, pulseRingStyle]} />
-                  <View style={[styles.checkButton, styles.checkOutButton, locationLoading && styles.loadingButton]}>
+                  <View style={[styles.checkButton, styles.checkOutButton, (locationLoading || submitting !== null) && styles.loadingButton]}>
                     <View style={styles.checkButtonInner}>
-                      {locationLoading ? (
+                      {(locationLoading || submitting !== null) ? (
                         <Animated.View style={spinStyle}>
                           <MaterialCommunityIcons name="loading" size={48} color="white" />
                         </Animated.View>
@@ -521,7 +598,11 @@ function Home() {
                       )}
                       <Text style={styles.checkButtonText}>Check Out</Text>
                       <Text style={styles.checkButtonSubtext}>
-                        {locationLoading ? "Getting location..." : "Tap to clock out"}
+                        {locationLoading
+                          ? "Getting location..."
+                          : submitting === 'checkout'
+                            ? "Marking check-out..."
+                            : "Tap to clock out"}
                       </Text>
                     </View>
                   </View>

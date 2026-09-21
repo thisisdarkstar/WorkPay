@@ -1,6 +1,7 @@
 // Office context: holds the list of offices for admin screens.
 import { createContext, useCallback, useContext, useState } from 'react';
 import { api, getActiveSession, getApiErrorMessage } from '../services/ApiService';
+import { CacheKeys, getSWR, TTL } from '../services/CacheService';
 
 const defaultOfficeContext = {
   officeData: [],
@@ -23,7 +24,7 @@ export const OfficeProvider = ({ children }) => {
   // Dashboard screen to populate it as a side-effect. The offices endpoint is
   // admin-only, so we only fetch when an admin session is present; this keeps
   // the provider safe to mount app-wide (including employee/login screens).
-  const refreshOffices = useCallback(async () => {
+  const refreshOffices = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
       const session = await getActiveSession();
       if (!session?.token || session.role !== 'admin') {
@@ -33,9 +34,21 @@ export const OfficeProvider = ({ children }) => {
       setOfficesLoading(true);
       setOfficesError(null);
 
-      const response = await api.get('/api/offices');
-      const offices = Array.isArray(response.data?.offices) ? response.data.offices : [];
-      setOfficeData(offices);
+      // Offices (locations, geofence radii, timings) change very rarely, so we
+      // cache with a 12h TTL and serve instantly. OfficeSettings invalidates
+      // this key on create/update/delete so edits show up immediately.
+      const offices = await getSWR(
+        CacheKeys.offices(),
+        async () => {
+          const response = await api.get('/api/offices');
+          return Array.isArray(response.data?.offices) ? response.data.offices : [];
+        },
+        {
+          ttl: TTL.TWELVE_HOURS,
+          forceRefresh,
+          onData: (list) => setOfficeData(Array.isArray(list) ? list : []),
+        }
+      );
       return offices;
     } catch (error) {
       setOfficesError(getApiErrorMessage(error, 'Failed to load offices'));

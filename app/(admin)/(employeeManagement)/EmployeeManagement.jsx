@@ -22,6 +22,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useContextData } from "../../../context/EmployeeContext";
 import { useOfficeContextData } from '../../../context/OfficeContext';
 import { api, getApiErrorMessage, getToken } from '../../../services/ApiService';
+import { CacheKeys, getSWR, invalidate, TTL } from '../../../services/CacheService';
 import { styles } from '../../../styles/EmployeeManagementStyles';
 
 function EmployeeManagement() {
@@ -74,13 +75,28 @@ function EmployeeManagement() {
   });
 
 
-  const fetchEmployees = useCallback(async () => {
+  const fetchEmployees = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
       setLoading(true);
-      const response = await api.get('/api/employees/getAll');
-      const data = Array.isArray(response.data) ? response.data : [];
-      setEmployees(data);
-      setFilteredEmployees(data);
+      // Roster changes only on add / edit / status toggle, all of which
+      // invalidate this key. stale-while-revalidate with a short TTL shows the
+      // list instantly and refreshes in the background on focus.
+      await getSWR(
+        CacheKeys.employeesAll(),
+        async () => {
+          const response = await api.get('/api/employees/getAll');
+          return Array.isArray(response.data) ? response.data : [];
+        },
+        {
+          ttl: TTL.FIVE_MIN,
+          forceRefresh,
+          onData: (data) => {
+            const list = Array.isArray(data) ? data : [];
+            setEmployees(list);
+            setFilteredEmployees(list);
+          },
+        }
+      );
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Error fetching employees'), 'Error');
       console.error('Error fetching employees:', error);
@@ -107,7 +123,8 @@ function EmployeeManagement() {
       });
       showToast(response.data?.message || "Employee added successfully", "Success");
       setModalVisible(false);
-      fetchEmployees();
+      await invalidate(CacheKeys.employeesAll());
+      await fetchEmployees({ forceRefresh: true });
 
       // C-03: Surface the server-generated temporary password in the existing
       // copy/share modal so the admin can hand it to the new employee securely.
@@ -141,7 +158,8 @@ function EmployeeManagement() {
       });
       showToast(response.data?.message || "Employee updated successfully", "Success");
       setModalVisible(false);
-      fetchEmployees();
+      await invalidate(CacheKeys.employeesAll());
+      await fetchEmployees({ forceRefresh: true });
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to update employee"), "Error");
       console.error('Error editing employee:', error);
@@ -163,7 +181,8 @@ function EmployeeManagement() {
       showToast(response.data?.message || "Status updated", "Success");
       setStatusModalVisible(false);
       setEmployeeToStatusUpdate(null);
-      fetchEmployees();
+      await invalidate(CacheKeys.employeesAll());
+      await fetchEmployees({ forceRefresh: true });
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to update status"), "Error");
       console.error('Error updating status:', error);
@@ -279,7 +298,7 @@ function EmployeeManagement() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchEmployees();
+      await fetchEmployees({ forceRefresh: true });
     } finally {
       setRefreshing(false);
     }

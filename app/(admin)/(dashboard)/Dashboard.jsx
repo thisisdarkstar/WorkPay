@@ -3,7 +3,7 @@ import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useContextData } from '../../../context/EmployeeContext';
@@ -18,6 +18,12 @@ function Dashboard() {
   const { ExitModal } = useExitConfirmation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Distinct from `loading` (which covers the finalize action). `statsLoading`
+  // is true while an office-switch fetch is in flight, so the UI can suppress
+  // the previous office's numbers/lists instead of flashing them under the
+  // newly-selected office's header. Eliminates the "old totals briefly show
+  // for the new branch" glitch.
+  const [statsLoading, setStatsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isAttendanceFinalized, setIsAttendanceFinalized] = useState(false);
   const {showToast, setEmployeeData} = useContextData();
@@ -28,24 +34,55 @@ function Dashboard() {
 
   const [autoFinalizeDisplay, setAutoFinalizeDisplay] = useState(null);
   const [showFinalizeConfirm, setShowFinalizeConfirm] = useState(false);
+  // Tracks the LATEST office selection the user has made. Every in-flight
+  // fetch compares its target officeId against this ref before committing
+  // state, so a slow response for a previously-selected office can never
+  // stomp the currently-selected office's data (fixes the "cursor jumps
+  // back" symptom when the admin taps offices rapidly).
+  const latestOfficeReqRef = useRef('all');
 
   // Modified dashboardDetails to accept officeId parameter
   const dashboardDetails = useCallback(async (officeId) => {
+    // Mark this call as the latest and enter loading state so the UI switches
+    // to `···` placeholders rather than showing the previous office's numbers.
+    latestOfficeReqRef.current = officeId;
+    setStatsLoading(true);
     try {
       const response = await api.get(`/api/attendances/getTodayAttendance/${officeId}`);
+      // Stale-response guard: another switch happened while we were awaiting
+      // this response. Drop it silently so the newer selection's data isn't
+      // overwritten by a late-arriving reply for a previously-selected office.
+      if (latestOfficeReqRef.current !== officeId) return;
+
       const resData = response.data;
       setData(resData);
       if (resData?.offices) {
         setOfficeData(resData.offices);
         if (officeId !== 'all' && !resData.offices.some(o => o.id === Number(officeId))) {
+          // Office no longer exists (e.g., deleted from another session).
+          // Snap the selector back to All Branches so the header/stats stay
+          // coherent instead of orphaning on a dead officeId.
           setCurrentOffice('all');
         }
       }
-      if (resData?.office?.id) setCurrentOffice(resData.office.id);
+      // NOTE: We intentionally do NOT `setCurrentOffice(resData.office.id)`
+      // here. The client selection is authoritative; letting the server
+      // echo-back drive state caused a "cursor jumps back" flicker when a
+      // stale response arrived after the admin had already moved on to a
+      // different office.
     } catch (error) {
+      // Only surface the error if this is still the active request. Errors
+      // for superseded requests would be misleading toast noise.
+      if (latestOfficeReqRef.current !== officeId) return;
       showToast(getApiErrorMessage(error, 'Error fetching dashboard details'), 'Error');
       console.error('Error fetching dashboard details:', error);
       return null;
+    } finally {
+      // Only clear the loading gate if this is still the active request.
+      // Otherwise the newer in-flight fetch will clear it when it settles.
+      if (latestOfficeReqRef.current === officeId) {
+        setStatsLoading(false);
+      }
     }
   }, [setOfficeData, showToast]);
 
@@ -66,12 +103,22 @@ function Dashboard() {
   }
 
   const checkAttendanceFinalization = useCallback(async (officeId) => {
+    // Reset up-front so the finalize button and auto-finalize banner briefly
+    // clear when switching, rather than showing the PREVIOUS office's
+    // "Finalized" state until this call returns. A blank state is a much
+    // better UX than a stale "Finalized" tag on the wrong office.
+    setIsAttendanceFinalized(false);
+    setIsEmployeesAvailable(false);
+    setAutoFinalizeDisplay(null);
+
     if (!officeId || officeId === 'all') {
-      setAutoFinalizeDisplay(null);
+      // Nothing to check for the aggregate view.
       return;
     }
     try {
       const response = await api.get(`/api/attendances/checkBulkAttendanceStatus/${officeId}`);
+      // Stale-response guard — same rationale as in dashboardDetails.
+      if (latestOfficeReqRef.current !== officeId) return;
       setIsAttendanceFinalized(!!response.data?.isBulkMarkingCompleted);
       setIsEmployeesAvailable((response.data?.totalEmployees || 0) > 0);
       setAutoFinalizeDisplay(response.data?.autoFinalizeDisplay || null);
@@ -80,35 +127,36 @@ function Dashboard() {
     }
   }, []);
 
-  // Modified office selection handler
+  // Simplified: only update the selected office and close the dropdown.
+  // The single fetch source (useFocusEffect below) picks up the change and
+  // fires exactly ONE dashboardDetails + ONE checkAttendanceFinalization,
+  // eliminating the duplicate-fetch storm that previously fired here plus
+  // in the focus effect (two rounds of setState → visible flicker).
   const handleOfficeSelect = (officeId) => {
     setCurrentOffice(officeId);
     setShowOfficeList(false);
-    dashboardDetails(officeId); // Immediately fetch data for selected office
-    if (officeId !== "all") {
-      checkAttendanceFinalization(officeId);
-    } else {
-      setAutoFinalizeDisplay(null);
-      setIsAttendanceFinalized(false);
-    }
   }
 
   useFocusEffect(
     useCallback(() => {
+      // Single source of truth for both fetches. Runs on initial focus AND
+      // whenever `currentOffice` changes (via handleOfficeSelect), because
+      // the callback identity changes and useFocusEffect re-runs its
+      // internal useEffect. This replaces the old pattern that also called
+      // these directly from handleOfficeSelect (which caused each fetch to
+      // fire twice per switch).
       dashboardDetails(currentOffice);
-      if (currentOffice !== 'all') {
-        checkAttendanceFinalization(currentOffice);
-      }
+      checkAttendanceFinalization(currentOffice);
     }, [currentOffice, dashboardDetails, checkAttendanceFinalization])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await dashboardDetails(currentOffice);
-      if (currentOffice !== 'all') {
-        await checkAttendanceFinalization(currentOffice);
-      }
+      await Promise.all([
+        dashboardDetails(currentOffice),
+        checkAttendanceFinalization(currentOffice),
+      ]);
     } finally {
       setRefreshing(false);
     }
@@ -217,8 +265,10 @@ function Dashboard() {
             </View>
           )}
 
-          {/* Quick alert banner for pending leaves */}
-          {Array.isArray(data?.pendingLeaves) && data.pendingLeaves.length > 0 && (
+          {/* Quick alert banner for pending leaves — suppressed while a
+              switch is in flight so the previous office's count doesn't
+              flash under the newly-selected office header. */}
+          {!statsLoading && Array.isArray(data?.pendingLeaves) && data.pendingLeaves.length > 0 && (
             <TouchableOpacity 
               activeOpacity={0.8}
               onPress={() => router.push({ pathname: '/LeaveRequests', params: { id: currentOffice } })}
@@ -311,7 +361,7 @@ function Dashboard() {
                     {renderIcon(stat.icon, stat.iconSet, stat.color)}
                   </View>
                   <View style={styles.cardText}>
-                    <Text style={styles.cardCount}>{stat.field === "totalPresent" ? ((data?.["totalLate"] || 0) + (data?.["totalPresent"] || 0)) : (data?.[stat.field] ?? 0)}</Text>
+                    <Text style={styles.cardCount}>{statsLoading ? '···' : (stat.field === "totalPresent" ? ((data?.["totalLate"] || 0) + (data?.["totalPresent"] || 0)) : (data?.[stat.field] ?? 0))}</Text>
                     <Text style={styles.cardLabel}>{stat.label}</Text>
                   </View>
                 </View>
@@ -334,7 +384,7 @@ function Dashboard() {
                     {renderIcon(stat.icon, stat.iconSet, stat.color)}
                   </View>
                   <View style={styles.cardText}>
-                    <Text style={styles.cardCount}>{stat.field === "totalPresent" ? ((data?.["totalPresent"] || 0) + (data?.["totalLate"] || 0)) : (data?.[stat.field] ?? 0)}</Text>
+                    <Text style={styles.cardCount}>{statsLoading ? '···' : (stat.field === "totalPresent" ? ((data?.["totalPresent"] || 0) + (data?.["totalLate"] || 0)) : (data?.[stat.field] ?? 0))}</Text>
                     <Text style={styles.cardLabel}>{stat.label}</Text>
                   </View>
                 </View>
@@ -345,8 +395,9 @@ function Dashboard() {
           </View>
         </View>
 
-        {/* Absent List */}
-       {Array.isArray(data?.absentList) && data.absentList.length > 0 && <View style={styles.sectionContainer}>
+        {/* Absent List — hidden during an office switch so the previous
+            office's absentees don't briefly render under the new header. */}
+       {!statsLoading && Array.isArray(data?.absentList) && data.absentList.length > 0 && <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Absent Today</Text>
           <View style={styles.recentActivityContainer}>
             {data.absentList.map((employee, index) => (
@@ -368,7 +419,7 @@ function Dashboard() {
           <View style={styles.sectionHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Text style={styles.sectionTitle}>Leave Requests</Text>
-              {Array.isArray(data?.pendingLeaves) && data.pendingLeaves.length > 0 && (
+              {!statsLoading && Array.isArray(data?.pendingLeaves) && data.pendingLeaves.length > 0 && (
                 <View style={{ backgroundColor: '#FFB800', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
                   <Text style={{ color: '#111827', fontSize: 12, fontWeight: '700' }}>{data.pendingLeaves.length}</Text>
                 </View>
@@ -382,7 +433,14 @@ function Dashboard() {
               <AntDesign name="right" size={16} color="#4A9EFF" />
             </TouchableOpacity>
           </View>
-          {Array.isArray(data?.pendingLeaves) && data.pendingLeaves.length > 0 ? (
+          {statsLoading ? (
+            // Placeholder while the switch fetch is in flight. Prevents
+            // showing the previous office's pending-leave list under the
+            // newly-selected office header.
+            <View style={{ padding: 18, backgroundColor: '#192633', borderRadius: 10, alignItems: 'center', marginTop: 8 }}>
+              <ActivityIndicator size="small" color="#4A9EFF" />
+            </View>
+          ) : Array.isArray(data?.pendingLeaves) && data.pendingLeaves.length > 0 ? (
             <View style={styles.recentActivityContainer}>
               {data.pendingLeaves.map((request, index) => (
                 <View key={request.id || index} style={styles.recentActivityItem}>

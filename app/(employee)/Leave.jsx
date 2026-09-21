@@ -17,6 +17,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useContextData } from '../../context/EmployeeContext';
 import { api, getApiErrorMessage, getToken } from '../../services/ApiService';
+import { CacheKeys, getSWR, invalidate, TTL } from '../../services/CacheService';
+import { AnalyticsEvents, logEvent } from '../../services/AnalyticsService';
 import { formatDay } from "../../utils/TimeUtils";
 import { styles } from '../../styles/LeaveStyles';
 
@@ -218,34 +220,44 @@ const formatDateForComparison = (date) => {
     }
   };
 
-  const fetchHolidays = useCallback(async () => {
+  const fetchHolidays = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
       setIsLoadingHolidays(true);
-      const response = await api.get('/api/holidays/getAll');
-      
-      // Store raw holidays for validation
-      const allHolidays = [];
-      if (Array.isArray(response.data)) {
-        response.data.forEach(monthItem => {
-          if (Array.isArray(monthItem?.holidays)) {
-            monthItem.holidays.forEach(holiday => {
-              allHolidays.push(holiday);
+      await getSWR(
+        CacheKeys.holidays(currentYear),
+        async () => {
+          const response = await api.get('/api/holidays/getAll');
+          return Array.isArray(response.data) ? response.data : [];
+        },
+        {
+          ttl: TTL.DAY,
+          forceRefresh,
+          onData: (raw) => {
+            const list = Array.isArray(raw) ? raw : [];
+
+            // Store raw holidays for validation
+            const allHolidays = [];
+            list.forEach(monthItem => {
+              if (Array.isArray(monthItem?.holidays)) {
+                monthItem.holidays.forEach(holiday => {
+                  allHolidays.push(holiday);
+                });
+              }
             });
-          }
-        });
-      }
-      setRawHolidays(allHolidays);
-      
-      // Transform the response to match the frontend format
-      const transformedHolidays = Array.isArray(response.data) ? response.data.map(monthItem => ({
-        month: `${monthItem.month} ${currentYear}`,
-        holidays: Array.isArray(monthItem?.holidays) ? monthItem.holidays.map(holiday => ({
-          date: new Date(holiday.date).getDate().toString().padStart(2, "0"),
-          name: holiday.description
-        })) : []
-      })) : [];
-      
-      setHolidaysData(transformedHolidays);
+            setRawHolidays(allHolidays);
+
+            // Transform the response to match the frontend format
+            const transformedHolidays = list.map(monthItem => ({
+              month: `${monthItem.month} ${currentYear}`,
+              holidays: Array.isArray(monthItem?.holidays) ? monthItem.holidays.map(holiday => ({
+                date: new Date(holiday.date).getDate().toString().padStart(2, "0"),
+                name: holiday.description
+              })) : []
+            }));
+            setHolidaysData(transformedHolidays);
+          },
+        }
+      );
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to fetch holidays"), "Error");
       console.error('Error fetching holidays:', error);
@@ -256,15 +268,34 @@ const formatDateForComparison = (date) => {
     }
   }, [currentYear, showToast]);
 
-  const fetchLeavesHistory = useCallback(async () => {
+  const fetchLeavesHistory = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
-      const response = await api.get('/api/leaves/employee-leaves', {
-        params: { year: currentYear },
-      });
-      setLeaveHistory(response.data?.leaves || []);
-      if (response.data?.leaveBalance != null) {
-        setLeaveBalance(Number(response.data.leaveBalance));
-      }
+      // Leave history is mostly immutable (past requests) with the current
+      // year's list only changing when the user applies/gets a decision.
+      // stale-while-revalidate: show cached instantly, refresh in background.
+      // The apply-leave mutation invalidates this key so new requests appear.
+      await getSWR(
+        CacheKeys.leaves(currentYear),
+        async () => {
+          const response = await api.get('/api/leaves/employee-leaves', {
+            params: { year: currentYear },
+          });
+          return {
+            leaves: response.data?.leaves || [],
+            leaveBalance: response.data?.leaveBalance,
+          };
+        },
+        {
+          ttl: TTL.FIVE_MIN,
+          forceRefresh,
+          onData: (data) => {
+            setLeaveHistory(data?.leaves || []);
+            if (data?.leaveBalance != null) {
+              setLeaveBalance(Number(data.leaveBalance));
+            }
+          },
+        }
+      );
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to fetch leave history"), 'Error');
       console.error('Error fetching Leaves History:', error);
@@ -281,7 +312,10 @@ const formatDateForComparison = (date) => {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([fetchHolidays(), fetchLeavesHistory()]);
+      await Promise.all([
+        fetchHolidays({ forceRefresh: true }),
+        fetchLeavesHistory({ forceRefresh: true }),
+      ]);
     } finally {
       setRefreshing(false);
     }
@@ -346,7 +380,14 @@ const formatDateForComparison = (date) => {
         setLeavePreview(null);
         setModalVisible(false);
         showToast(response.data.message || 'Leave application submitted successfully', "Success");
-        fetchLeavesHistory();
+        await logEvent(AnalyticsEvents.LEAVE_APPLY, {
+          days: Number(leavePreview?.totalLeaveDays) || 0,
+          paid_days: Number(leavePreview?.paidDays) || 0,
+          unpaid_days: Number(leavePreview?.unpaidDays) || 0,
+        });
+        // A new leave was created → invalidate so the list refetches fresh.
+        await invalidate(CacheKeys.leaves(currentYear));
+        await fetchLeavesHistory({ forceRefresh: true });
       }
     } catch (error) {
       showToast(getApiErrorMessage(error, "Failed to apply leave"), "Error");

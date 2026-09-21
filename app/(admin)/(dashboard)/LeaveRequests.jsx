@@ -6,6 +6,7 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextIn
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useContextData } from '../../../context/EmployeeContext';
 import { api, getApiErrorMessage } from '../../../services/ApiService';
+import { AnalyticsEvents, logEvent } from '../../../services/AnalyticsService';
 import { formatDay } from "../../../utils/TimeUtils";
 
 
@@ -41,6 +42,7 @@ function LeaveRequests() {
       const resData = response.data;
       if (resData?.message) {
         showToast(resData.message, "Success");
+        await logEvent(AnalyticsEvents.LEAVE_STATUS_UPDATE, { status: type });
         fetchLeaveRequest();
       }
     } catch (error) {

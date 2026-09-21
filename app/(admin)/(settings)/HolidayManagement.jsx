@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useContextData } from "../../../context/EmployeeContext";
 import { api, getApiErrorMessage } from "../../../services/ApiService";
+import { CacheKeys, getSWR, invalidate, TTL } from "../../../services/CacheService";
 
 function HolidayManagement() {
   const currentYear = new Date().getFullYear();
@@ -32,30 +33,46 @@ function HolidayManagement() {
   const router = useRouter();
   const {showToast} = useContextData()
 
-  const fetchHolidays = useCallback(async () => {
+  // Transforms the raw /holidays/getAll payload into the grouped shape the UI
+  // renders. Kept pure so it can run on both cached and fresh data.
+  const transformHolidays = useCallback((raw) => {
+    const list = Array.isArray(raw) ? raw : [];
+    return list.map(monthItem => ({
+      month: `${monthItem?.month || ''} ${currentYear}`,
+      holidays: Array.isArray(monthItem?.holidays) ? monthItem.holidays.map(holiday => ({
+        id: holiday?.id,
+        date: holiday?.date ? new Date(holiday.date).getDate().toString().padStart(2, "0") : '--',
+        name: holiday?.description || 'Holiday',
+        fullDate: holiday?.date
+      })) : []
+    }));
+  }, [currentYear]);
+
+  // Holidays change only a few times a year, so we cache the raw payload with a
+  // 1-day TTL and serve it instantly (stale-while-revalidate). The add/delete
+  // mutations invalidate this key, guaranteeing the next read refetches.
+  const fetchHolidays = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
       setIsLoading(true);
-      const response = await api.get('/api/holidays/getAll');
-      
-      const raw = Array.isArray(response.data) ? response.data : [];
-      const transformedHolidays = raw.map(monthItem => ({
-        month: `${monthItem?.month || ''} ${currentYear}`,
-        holidays: Array.isArray(monthItem?.holidays) ? monthItem.holidays.map(holiday => ({
-          id: holiday?.id,
-          date: holiday?.date ? new Date(holiday.date).getDate().toString().padStart(2, "0") : '--',
-          name: holiday?.description || 'Holiday',
-          fullDate: holiday?.date
-        })) : []
-      }));
-      
-      setHolidays(transformedHolidays);
+      await getSWR(
+        CacheKeys.holidays(currentYear),
+        async () => {
+          const response = await api.get('/api/holidays/getAll');
+          return Array.isArray(response.data) ? response.data : [];
+        },
+        {
+          ttl: TTL.DAY,
+          forceRefresh,
+          onData: (raw) => setHolidays(transformHolidays(raw)),
+        }
+      );
     } catch (error) {
       console.error('Error fetching holidays:', error);
       showToast(getApiErrorMessage(error, 'Failed to fetch holidays'),'Error');
     } finally {
       setIsLoading(false);
     }
-  }, [currentYear, showToast]);
+  }, [currentYear, showToast, transformHolidays]);
 
   const addHoliday = async () => {
     if (!holidayDate || !holidayName.trim()) {
@@ -70,18 +87,34 @@ function HolidayManagement() {
       const d = String(holidayDate.getDate()).padStart(2, '0');
       const formattedDateString = `${y}-${m}-${d}`;
 
-      await api.post('/api/holidays/add', {
+      const response = await api.post('/api/holidays/add', {
         description: holidayName,
         date: formattedDateString
       });
 
-      showToast( 'Holiday added successfully!','Success');
+      // F-8 (frontend companion): When the backend reconciles existing
+      // attendance rows (e.g. same-day / late-declared holiday), surface
+      // how many rows were overwritten and how many absence deductions
+      // were refunded so the admin sees the side effects, not just
+      // "Holiday added".
+      const overwrote = Number(response?.data?.attendanceOverwritten) || 0;
+      const refunded = Number(response?.data?.absenceDeductionsRefunded) || 0;
+      const extras = [];
+      if (overwrote > 0) extras.push(`${overwrote} attendance record${overwrote === 1 ? '' : 's'} converted to HOLIDAY`);
+      if (refunded > 0) extras.push(`${refunded} absence deduction${refunded === 1 ? '' : 's'} refunded`);
+      const successMsg = extras.length > 0
+        ? `Holiday added successfully! (${extras.join(', ')})`
+        : 'Holiday added successfully!';
+
+      showToast(successMsg, 'Success');
       setHolidayDate(null);
       setHolidayName("");
       setModalVisible(false);
-      
-      // Refresh the holidays list
-      await fetchHolidays();
+
+      // Data changed on the server → drop the cache and refetch fresh so the
+      // Leave screen (and this one) never shows a stale holiday list.
+      await invalidate(CacheKeys.holidays(currentYear));
+      await fetchHolidays({ forceRefresh: true });
     } catch (error) {
       console.error('Error adding holiday:', error);
       showToast(getApiErrorMessage(error, 'Failed to add holiday'),'Error');
@@ -105,9 +138,10 @@ function HolidayManagement() {
       showToast('Holiday deleted successfully!','Success');
       setDeleteModalVisible(false);
       setHolidayToDelete(null);
-      
-      // Refresh the holidays list
-      await fetchHolidays();
+
+      // Data changed on the server → drop the cache and refetch fresh.
+      await invalidate(CacheKeys.holidays(currentYear));
+      await fetchHolidays({ forceRefresh: true });
     } catch (error) {
       console.error('Error deleting holiday:', error);
       showToast(getApiErrorMessage(error, 'Failed to delete holiday'),'Error');
@@ -130,7 +164,7 @@ function HolidayManagement() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchHolidays();
+      await fetchHolidays({ forceRefresh: true });
     } finally {
       setRefreshing(false);
     }

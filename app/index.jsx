@@ -18,6 +18,7 @@ import {
 import { useContextData } from "../context/EmployeeContext";
 import { api, getActiveSession, getApiErrorMessage, storeToken } from '../services/ApiService';
 import { AdBanner } from '../components/ads/AdBanner';
+import { AnalyticsEvents, logEvent, setUserId, setUserProperties } from '../services/AnalyticsService';
 
 function IndexScreen() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -126,11 +127,23 @@ function IndexScreen() {
 
       if (response.data?.token) {
         await storeToken(response.data.token, 'employee');
+        // Analytics: tag the session with the employee id + role so all
+        // subsequent events are attributable in GA4 reports.
+        try {
+          const empId = response.data?.employee?.id ?? response.data?.id;
+          if (empId) await setUserId(empId);
+          await setUserProperties({ role: 'employee' });
+        } catch (_) { /* analytics never blocks login */ }
+        await logEvent(AnalyticsEvents.LOGIN_SUCCESS, { role: 'employee' });
         showToast(response?.data?.message || "Login successful", "Success");
         router.replace('/(employee)/(home)/Home');
       }
     } catch (error) {
       const errMsg = getApiErrorMessage(error, "Login failed. Please check your credentials.");
+      await logEvent(AnalyticsEvents.LOGIN_FAILURE, {
+        role: 'employee',
+        reason: (errMsg || 'unknown').slice(0, 100),
+      });
       showToast(errMsg, "Error");
       setErrors({ login: errMsg });
     } finally {
@@ -171,11 +184,21 @@ function IndexScreen() {
       
       if (response.data?.token) {
         await storeToken(response.data.token, 'admin');
+        try {
+          const adminId = response.data?.admin?.id ?? response.data?.id;
+          if (adminId) await setUserId(adminId);
+          await setUserProperties({ role: 'admin' });
+        } catch (_) { /* analytics never blocks login */ }
+        await logEvent(AnalyticsEvents.LOGIN_SUCCESS, { role: 'admin' });
         showToast(response?.data?.message || "Login successful", "Success");
         router.replace('/(admin)/(dashboard)/Dashboard');
       }
     } catch (error) {
       const errMsg = getApiErrorMessage(error, "Invalid email or password");
+      await logEvent(AnalyticsEvents.LOGIN_FAILURE, {
+        role: 'admin',
+        reason: (errMsg || 'unknown').slice(0, 100),
+      });
       showToast(errMsg, "Error");
       setErrors({ login: errMsg });
     } finally {

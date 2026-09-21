@@ -8,6 +8,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import DataCard from "../../components/Attendance/DataCard";
 import { useContextData } from "../../context/EmployeeContext";
 import { api, getApiErrorMessage } from "../../services/ApiService";
+import { CacheKeys, getSWR, TTL } from "../../services/CacheService";
 import { calculateTotalOvertime, countAbsentDays, countPresentDays, getTotalDaysInMonth } from "../../utils/TimeUtils";
 
 const months = [
@@ -65,20 +66,37 @@ function Attendance() {
     }
   };
 
-  const fetchAttendanceData = useCallback(async () => {
+  const fetchAttendanceData = useCallback(async ({ forceRefresh = false } = {}) => {
     try {
       setLoading(true);
-      const response = await api.get('/api/attendances/getAttendance', {
-        params: { month: currentMonth, year: currentYear },
-      });
-      setAttendanceData(response.data);
+      // A completed (past) month's attendance never changes → cache for a day.
+      // The current month still changes as the user checks in/out, so use a
+      // short TTL + SWR. The 'mark' action in Home invalidates the current
+      // month's key, so new check-ins appear immediately here too.
+      const isPastMonth =
+        currentYear < thisYear ||
+        (currentYear === thisYear && currentMonth < thisMonth);
+      await getSWR(
+        CacheKeys.attendance(currentYear, currentMonth),
+        async () => {
+          const response = await api.get('/api/attendances/getAttendance', {
+            params: { month: currentMonth, year: currentYear },
+          });
+          return response.data;
+        },
+        {
+          ttl: isPastMonth ? TTL.DAY : TTL.FIVE_MIN,
+          forceRefresh,
+          onData: (data) => setAttendanceData(data),
+        }
+      );
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Error fetching attendance data'), 'Error');
       console.error("Error fetching attendance data:", error);
     } finally {
       setLoading(false);
     }
-  }, [currentMonth, currentYear, showToast]);
+  }, [currentMonth, currentYear, thisMonth, thisYear, showToast]);
 
   useFocusEffect(
     useCallback(() => {
@@ -89,7 +107,7 @@ function Attendance() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchAttendanceData();
+      await fetchAttendanceData({ forceRefresh: true });
     } finally {
       setRefreshing(false);
     }

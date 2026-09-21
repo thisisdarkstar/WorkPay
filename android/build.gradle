@@ -9,6 +9,11 @@ buildscript {
     classpath('com.android.tools.build:gradle')
     classpath('com.facebook.react:react-native-gradle-plugin')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+    // Google Services plugin — required by @react-native-firebase/app to
+    // process android/app/google-services.json at build time. Must match the
+    // buildscript classpath, not the app-level `plugins {}` block, because
+    // this project uses the legacy `apply plugin:` style.
+    classpath('com.google.gms:google-services:4.4.2')
   }
 }
 

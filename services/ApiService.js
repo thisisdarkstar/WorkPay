@@ -141,6 +141,24 @@ export const removeToken = async () => {
   try {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     await SecureStore.deleteItemAsync(ROLE_KEY);
+    // Wipe all cached API reads so a different user on this device never sees
+    // the previous session's holidays/profile/roster/etc. Dynamically imported
+    // to avoid any module-load ordering concerns with the interceptors above.
+    try {
+      const { clearAll } = await import('./CacheService');
+      await clearAll();
+    } catch (cacheErr) {
+      console.warn('[ApiService] Failed to clear caches on logout:', cacheErr?.message || cacheErr);
+    }
+    // Also detach the Firebase Analytics user id so events after logout are
+    // reported anonymously (until the next login re-attaches an id).
+    try {
+      const { setUserId, logEvent, AnalyticsEvents } = await import('./AnalyticsService');
+      await logEvent(AnalyticsEvents.LOGOUT);
+      await setUserId(null);
+    } catch (analyticsErr) {
+      console.warn('[ApiService] Failed to reset analytics on logout:', analyticsErr?.message || analyticsErr);
+    }
     return true;
   } catch (error) {
     console.error('Error removing token:', error);
@@ -152,25 +170,6 @@ export const hasToken = async () => {
   const session = await getActiveSession();
   return !!session?.token;
 };
-
-// Global Axios response interceptor to auto-clear expired/invalid sessions.
-// Any 401 (Unauthorized) means the stored token is no longer trusted by the
-// server, so we clear it locally. Login endpoints are excluded because a 401
-// there simply means "wrong credentials" and must not wipe an unrelated session.
-axios.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error?.response?.status === 401) {
-      const requestUrl = error.config?.url || '';
-      const isLoginRequest = /\/login$/i.test(requestUrl) || requestUrl.includes('/login');
-      if (!isLoginRequest) {
-        console.warn('[ApiService] Received 401 Unauthorized. Clearing local session.');
-        await removeToken();
-      }
-    }
-    return Promise.reject(error);
-  }
-);
 
 /**
  * Safely extracts a user-friendly error message from any caught error.
