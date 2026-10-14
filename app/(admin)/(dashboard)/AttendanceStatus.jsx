@@ -95,8 +95,17 @@ function AttendanceStatus() {
         <View style={{ width: 40 }} />
       </View>
 
-      <View style={{ backgroundColor: getStatusBackground(status), marginTop: 20, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 8, alignSelf: "center", justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ color: getStatusColor(status), fontWeight: "bold", fontSize: 14 }}>{status}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 16 }}>
+        <View style={{ backgroundColor: getStatusBackground(status), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 8, justifyContent: "center", alignItems: "center" }}>
+          <Text style={{ color: getStatusColor(status), fontWeight: "bold", fontSize: 14 }}>{status}</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => router.push({ pathname: '/History', params: { tab: 'attendance', status, officeId: id } })}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#192633', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#2A3441' }}
+        >
+          <Feather name="clock" size={13} color="#4A9EFF" />
+          <Text style={{ color: '#4A9EFF', fontSize: 12, fontWeight: '600' }}>View History</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Search bar (sticky above the scrolling list) */}

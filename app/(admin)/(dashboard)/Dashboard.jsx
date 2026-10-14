@@ -393,6 +393,50 @@ function Dashboard() {
               )
             ))}
           </View>
+
+          {/* Attendance & Leave History Quick Navigation Banner */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push({ pathname: '/History', params: { officeId: currentOffice } })}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#1E293B',
+              borderWidth: 1,
+              borderColor: 'rgba(74, 158, 255, 0.3)',
+              padding: 14,
+              borderRadius: 12,
+              marginTop: 14,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+              <View
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 10,
+                  backgroundColor: 'rgba(74, 158, 255, 0.15)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <Ionicons name="calendar-outline" size={22} color="#4A9EFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700' }}>
+                  Attendance & Leave History
+                </Text>
+                <Text style={{ color: '#94A3B8', fontSize: 12, marginTop: 2 }}>
+                  Filter logs by dates, employee name & branch
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(74, 158, 255, 0.15)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+              <Text style={{ color: '#4A9EFF', fontSize: 12, fontWeight: '700' }}>View Logs</Text>
+              <AntDesign name="right" size={12} color="#4A9EFF" />
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Absent List — hidden during an office switch so the previous

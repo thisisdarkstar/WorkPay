@@ -336,8 +336,8 @@ function Home() {
         // reflects the first one.
         await fetchDashboardDetails({ forceRefresh: true });
 
-        // If checkout completed, show compliant Interstitial Ad at natural transition point
-        if (action === 'checkout') {
+        // Show compliant Interstitial Ad at natural transition point after check-in or check-out
+        if (action === 'checkin' || action === 'checkout') {
           showInterstitialAd().catch((adErr) => {
             console.log('[AdMob] Interstitial show error:', adErr);
           });

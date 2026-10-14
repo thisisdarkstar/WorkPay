@@ -2,7 +2,7 @@
   "expo": {
     "name": "WorkPay",
     "slug": "workpay",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "workpayapp",
@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.chiranjeebnayak.workPayApp",
-      "buildNumber": "15",
+      "buildNumber": "16",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "WorkPay requires location access to verify employee presence within the office premises for clock-in and attendance.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "WorkPay requires location access to verify employee presence within the office premises for clock-in and attendance.",
@@ -25,7 +25,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.chiranjeebnayak.workPayApp",
-      "versionCode": 15,
+      "versionCode": 16,
       "googleServicesFile": "./android/app/google-services.json",
       "permissions": [
         "INTERNET",

@@ -44,6 +44,9 @@ function CustomTabBar({ state, descriptors, navigation }) {
           case '(employeeManagement)':
             iconName = 'people-outline';
             break;
+          case 'History':
+            iconName = 'calendar-outline';
+            break;
           case 'SalaryManagement':
             iconName = 'cash-outline';
             break;
@@ -93,6 +96,7 @@ function AdminLayout() {
     <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <CustomTabBar {...props} />}>
       <Tabs.Screen name="(dashboard)"  options={{ title: 'Dashboard' }} />
       <Tabs.Screen name="(employeeManagement)" options={{ title: 'Staff' }} />
+      <Tabs.Screen name="History" options={{ title: 'History' }} />
       <Tabs.Screen name="SalaryManagement" options={{ title: 'Payroll' }} />
       <Tabs.Screen name="(settings)" options={{ title: 'Settings' }} />
     </Tabs>
