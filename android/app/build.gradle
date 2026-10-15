@@ -91,9 +91,9 @@ android {
     defaultConfig {
         applicationId 'com.chiranjeebnayak.workPayApp'
         minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 16
-        versionName "1.2.1"
+        targetSdkVersion 36
+        versionCode 18
+        versionName "1.2.3"
 
         externalNativeBuild {
             cmake {
@@ -128,7 +128,7 @@ android {
             signingConfig (project.hasProperty('MYAPP_UPLOAD_STORE_FILE') ? signingConfigs.release : signingConfigs.debug)
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
         }
     }

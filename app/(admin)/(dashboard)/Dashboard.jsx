@@ -184,11 +184,16 @@ function Dashboard() {
   };
 
   const handleLogout = async () => {
-    setOfficeData([]);
-    setData(null);
-    setEmployeeData({});
-    await removeToken();
-    router.replace('/');
+    try {
+      setOfficeData([]);
+      setData(null);
+      setEmployeeData({});
+      router.replace('/');
+      await removeToken();
+    } catch (err) {
+      console.warn('Error during admin logout:', err);
+      router.replace('/');
+    }
   };
 
   return (

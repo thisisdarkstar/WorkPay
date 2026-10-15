@@ -37,6 +37,8 @@ export const ADMOB_TEST_IDS = {
   ANDROID_APP_OPEN: 'ca-app-pub-3940256099942544/9257395921',
   // Official AdMob Android Test Interstitial ID
   ANDROID_INTERSTITIAL: 'ca-app-pub-3940256099942544/1033173712',
+  // Official AdMob Android Test Native Advanced ID
+  ANDROID_NATIVE: 'ca-app-pub-3940256099942544/2247696110',
 
   // Official AdMob iOS Test Banner ID (Fixed 320x50)
   IOS_BANNER: 'ca-app-pub-3940256099942544/2934735716',
@@ -46,6 +48,8 @@ export const ADMOB_TEST_IDS = {
   IOS_APP_OPEN: 'ca-app-pub-3940256099942544/5575463023',
   // Official AdMob iOS Test Interstitial ID
   IOS_INTERSTITIAL: 'ca-app-pub-3940256099942544/4411468910',
+  // Official AdMob iOS Test Native Advanced ID
+  IOS_NATIVE: 'ca-app-pub-3940256099942544/3986624511',
 
   // Official AdMob Android Test App ID
   ANDROID_APP_ID: 'ca-app-pub-3940256099942544~3347511713',
@@ -117,6 +121,28 @@ export const getInterstitialAdUnitId = (): string => {
 
   return defaultTestId;
 };
+
+/**
+ * Resolves the Native Advanced Ad Unit ID.
+ */
+export const getNativeAdUnitId = (): string => {
+  const googleAds = getGoogleMobileAds();
+  const defaultTestId =
+    googleAds?.TestIds?.NATIVE ||
+    (Platform.OS === 'ios' ? ADMOB_TEST_IDS.IOS_NATIVE : ADMOB_TEST_IDS.ANDROID_NATIVE);
+
+  if (__DEV__) {
+    return defaultTestId;
+  }
+
+  const productionId = process.env.EXPO_PUBLIC_ADMOB_NATIVE_ID;
+  if (productionId && productionId.trim().length > 0) {
+    return productionId.trim();
+  }
+
+  return defaultTestId;
+};
+
 
 /**
  * Request configuration for non-personalized ads or specific targeting

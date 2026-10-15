@@ -22,6 +22,8 @@ import { useOfficeContextData } from "../../context/OfficeContext"
 import { styles } from '../../styles/SalaryManagementStyles'
 import { api, getApiErrorMessage } from "../../services/ApiService"
 import { AnalyticsEvents, logEvent } from "../../services/AnalyticsService"
+import { NativeAdCard } from '../../components/ads/NativeAdCard'
+
 
 function AdminSalaryManagement() {
   const router = useRouter()
@@ -685,8 +687,16 @@ function AdminSalaryManagement() {
             tintColor="#4A9EFF"
           />
         }
-        renderItem={renderEmployeeCard}
+        renderItem={({ item, index }) => (
+          <>
+            {renderEmployeeCard({ item })}
+            {index === 2 && (
+              <NativeAdCard style={{ marginHorizontal: 16, marginVertical: 8 }} />
+            )}
+          </>
+        )}
         showsVerticalScrollIndicator={false}
+
         ListEmptyComponent={
           <View style={{ padding: 40, alignItems: 'center' }}>
             <MaterialIcons name="payments" size={48} color="#486581" />

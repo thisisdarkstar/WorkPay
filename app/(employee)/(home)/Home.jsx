@@ -384,13 +384,16 @@ function Home() {
   };
 
   const handleLogout = async () => {
-    // Clear cached user data so a subsequent user on this device can never
-    // briefly see the previous user's PII held in context memory.
-    setEmployeeData({});
-    setDashboardDetails(null);
-    await removeToken();
-    router.replace('/');
-  }
+    try {
+      setEmployeeData({});
+      setDashboardDetails(null);
+      router.replace('/');
+      await removeToken();
+    } catch (err) {
+      console.warn('Error during employee logout:', err);
+      router.replace('/');
+    }
+  };
 
 
   return (

@@ -154,3 +154,28 @@ export const showInterstitialAd = async (): Promise<boolean> => {
     return false;
   }
 };
+
+/**
+ * Opens Google Ad Inspector for real-time debugging of ad requests,
+ * eCPMs, error codes, and fill rates on registered test devices.
+ */
+export const openAdInspector = async (): Promise<boolean> => {
+  try {
+    if (!isNativeAdMobAvailable()) {
+      console.log('[AdMob] Native AdMob module unavailable for Ad Inspector.');
+      return false;
+    }
+
+    const googleAds = getGoogleMobileAds();
+    if (googleAds && typeof googleAds.default === 'function') {
+      const mobileAdsInstance = googleAds.default();
+      await mobileAdsInstance.openAdInspector();
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.warn('[AdMob] Failed to open Ad Inspector:', error);
+    return false;
+  }
+};
+

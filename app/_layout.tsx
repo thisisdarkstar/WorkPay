@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { EmployeeProvider } from "../context/EmployeeContext";
 import { OfficeProvider } from "../context/OfficeContext";
+import MandatoryUpdateGate from "../components/MandatoryUpdateGate";
 
 import { useEffect } from 'react';
 import { isNativeAdMobAvailable, getGoogleMobileAds } from '../constants/AdsConfig';
@@ -76,18 +77,21 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <EmployeeProvider>
-      <OfficeProvider>
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="ForgotPassword" options={{ headerShown: false }} />
-        <Stack.Screen name="(employee)" options={{ headerShown: false }} />
-        <Stack.Screen name="(admin)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-      </OfficeProvider>
-      </EmployeeProvider>
+      <MandatoryUpdateGate>
+        <EmployeeProvider>
+          <OfficeProvider>
+            <Stack>
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="ForgotPassword" options={{ headerShown: false }} />
+              <Stack.Screen name="(employee)" options={{ headerShown: false }} />
+              <Stack.Screen name="(admin)" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+            <StatusBar style="auto" />
+          </OfficeProvider>
+        </EmployeeProvider>
+      </MandatoryUpdateGate>
     </ThemeProvider>
   );
 }
+

@@ -6,6 +6,8 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DataCard from "../../components/Attendance/DataCard";
+import { NativeAdCard } from "../../components/ads/NativeAdCard";
+
 import { useContextData } from "../../context/EmployeeContext";
 import { api, getApiErrorMessage } from "../../services/ApiService";
 import { CacheKeys, getSWR, TTL } from "../../services/CacheService";
@@ -198,13 +200,19 @@ function Attendance() {
             </Animated.View>
           }
           renderItem={({ item, index }) => (
-            <Animated.View 
-              entering={FadeInDown.delay(Math.min(index * 30, 240)).duration(280).springify()}
-              style={styles.cardWrapper}
-            >
-              <DataCard data={item} />
-            </Animated.View>
+            <>
+              <Animated.View 
+                entering={FadeInDown.delay(Math.min(index * 30, 240)).duration(280).springify()}
+                style={styles.cardWrapper}
+              >
+                <DataCard data={item} />
+              </Animated.View>
+              {index === 3 && (
+                <NativeAdCard style={{ marginHorizontal: 16, marginVertical: 8 }} />
+              )}
+            </>
           )}
+
         />
       )}
     </SafeAreaView>

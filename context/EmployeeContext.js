@@ -22,14 +22,28 @@ export const EmployeeProvider = ({ children }) => {
   const timeoutRef = useRef(null);
 
   const showToast = useCallback((message, type = 'Info') => {
+    if (!message) return;
+
     // Coerce message safely to string
-    let safeMessage = 'An unexpected error occurred';
+    let safeMessage = '';
     if (typeof message === 'string' && message.trim().length > 0) {
-      safeMessage = message;
+      safeMessage = message.trim();
     } else if (message?.message && typeof message.message === 'string') {
-      safeMessage = message.message;
+      safeMessage = message.message.trim();
     } else if (message?.error && typeof message.error === 'string') {
-      safeMessage = message.error;
+      safeMessage = message.error.trim();
+    }
+
+    if (!safeMessage) return;
+
+    // Filter out internal auth / token middleware strings that should never be shown to users
+    if (
+      /no token provided/i.test(safeMessage) ||
+      /jwt must be provided/i.test(safeMessage) ||
+      /request aborted: no authentication token/i.test(safeMessage)
+    ) {
+      console.warn('[EmployeeContext] Suppressing internal auth toast:', safeMessage);
+      return;
     }
 
     // Clear any pending dismissal timer

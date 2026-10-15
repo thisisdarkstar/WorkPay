@@ -1,5 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { url } from '../constants/EnvValue';
 
 const TOKEN_KEY = 'USER_AUTH_TOKEN';
@@ -55,11 +57,35 @@ export const isTokenExpired = (token) => {
   }
 };
 
+let isLoggingOut = false;
+let logoutResetTimer = null;
+
+export const setLoggingOut = (status) => {
+  isLoggingOut = status;
+};
+
+export const isUserLoggingOut = () => isLoggingOut;
+
+const PUBLIC_ENDPOINTS = [
+  /\/api\/employees\/login$/i,
+  /\/api\/admins\/login$/i,
+  /\/api\/employees\/reset-password$/i,
+  /\/api\/admins\/reset-password-phone$/i,
+  /\/api\/version\/check$/i,
+];
+
+export const isPublicEndpoint = (requestUrl = '') => {
+  return PUBLIC_ENDPOINTS.some((pattern) => pattern.test(requestUrl));
+};
+
 /**
  * Stores authentication token and optional role securely.
  * Automatically infers role from JWT payload if not provided.
  */
 export const storeToken = async (token, role = null) => {
+  isLoggingOut = false;
+  if (logoutResetTimer) clearTimeout(logoutResetTimer);
+
   try {
     await SecureStore.setItemAsync(TOKEN_KEY, token);
 
@@ -138,6 +164,13 @@ export const getActiveSession = async () => {
 };
 
 export const removeToken = async () => {
+  isLoggingOut = true;
+  if (logoutResetTimer) clearTimeout(logoutResetTimer);
+  // Auto-reset latch after 4 seconds
+  logoutResetTimer = setTimeout(() => {
+    isLoggingOut = false;
+  }, 4000);
+
   try {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     await SecureStore.deleteItemAsync(ROLE_KEY);
@@ -176,8 +209,27 @@ export const hasToken = async () => {
  * Handles Axios network errors, API error payloads, timeouts, or unknown errors.
  */
 export const getApiErrorMessage = (error, defaultMsg = 'Something went wrong. Please check your network connection.') => {
-  if (!error) return defaultMsg;
-  if (typeof error === 'string') return error;
+  if (!error) return null;
+  if (typeof error === 'string') {
+    if (/no token provided/i.test(error)) return null;
+    return error;
+  }
+
+  // Silent / aborted requests (e.g. during logout or missing token on unmount)
+  if (
+    error.__silent ||
+    error.isAuthAborted ||
+    error.isLogoutError ||
+    isLoggingOut ||
+    axios.isCancel(error)
+  ) {
+    return null;
+  }
+
+  const serverError = error?.response?.data?.error || error?.response?.data?.message;
+  if (typeof serverError === 'string' && /no token provided/i.test(serverError)) {
+    return null;
+  }
 
   // H-07: Present a clear message for request timeouts / aborted requests.
   if (error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '')) {
@@ -185,8 +237,7 @@ export const getApiErrorMessage = (error, defaultMsg = 'Something went wrong. Pl
   }
 
   return (
-    error?.response?.data?.error ||
-    error?.response?.data?.message ||
+    serverError ||
     error?.message ||
     defaultMsg
   );
@@ -216,25 +267,66 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use(async (config) => {
+  const requestUrl = config.url || '';
+  const isPublic = isPublicEndpoint(requestUrl);
   const token = await getToken();
+
+  // If the user has logged out or is logging out, and this is a protected endpoint,
+  // abort early rather than sending an unauthenticated request over the network.
+  if (!token && !isPublic) {
+    const authError = new Error('Request aborted: No authentication token');
+    authError.__silent = true;
+    authError.isAuthAborted = true;
+    authError.isLogoutError = isLoggingOut;
+    return Promise.reject(authError);
+  }
+
+  config.headers = config.headers || {};
   if (token) {
-    config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  // Inject client app version metadata for defense-in-depth API policy
+  const versionCode =
+    Platform.OS === 'android'
+      ? Constants.expoConfig?.android?.versionCode || 18
+      : parseInt(Constants.expoConfig?.ios?.buildNumber || '18', 10);
+
+  config.headers['x-app-version-code'] = String(versionCode);
+  config.headers['x-app-platform'] = Platform.OS;
+
   return config;
 });
 
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    const requestUrl = error.config?.url || '';
+    const isLoginRequest = isPublicEndpoint(requestUrl) || /\/login$/i.test(requestUrl);
+
     if (error?.response?.status === 401) {
-      const requestUrl = error.config?.url || '';
-      const isLoginRequest = /\/login$/i.test(requestUrl) || requestUrl.includes('/login');
       if (!isLoginRequest) {
-        console.warn('[ApiService] Received 401 Unauthorized. Clearing local session.');
-        await removeToken();
+        if (!isLoggingOut) {
+          console.warn('[ApiService] Received 401 Unauthorized. Clearing local session.');
+          await removeToken();
+        } else {
+          error.__silent = true;
+          error.isLogoutError = true;
+        }
+      }
+    } else if (error?.response?.status === 426) {
+      console.warn('[ApiService] Received 426 Upgrade Required from backend.');
+      if (typeof globalThis.__onAppUpdateRequired === 'function') {
+        globalThis.__onAppUpdateRequired(error.response?.data);
       }
     }
+
+    if (isLoggingOut || error?.response?.data?.error === 'No token provided') {
+      error.__silent = true;
+      error.isLogoutError = true;
+    }
+
     return Promise.reject(error);
   }
-);
+);
+

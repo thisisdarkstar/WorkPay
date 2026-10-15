@@ -7,6 +7,8 @@ import { useContextData } from '../../context/EmployeeContext'
 import { api, getApiErrorMessage } from '../../services/ApiService'
 import { CacheKeys, getSWR, TTL } from '../../services/CacheService'
 import { styles } from '../../styles/PaymentStyles'
+import { NativeAdCard } from '../../components/ads/NativeAdCard'
+
 
 
 const months = [
@@ -226,6 +228,9 @@ function Payment() {
             </View>
           </View>
         </View>
+
+        {/* Native Advanced Ad - seamlessly integrated between salary overview and history */}
+        <NativeAdCard style={{ marginHorizontal: 16, marginVertical: 10 }} />
 
         {/* history */}
         <View style={styles.historyContainer}>
